@@ -1,0 +1,51 @@
+import SwiftUI
+
+/// Output channel strip with device picker and level meters.
+struct OutputStripView: View {
+    @Environment(MixerViewModel.self) private var viewModel
+    @Bindable var strip: OutputStripViewModel
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                // Header
+                Text(strip.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                // Device picker
+                Picker("", selection: Binding(
+                    get: { strip.selectedDevice },
+                    set: { _ in }  // handled below
+                )) {
+                    Text("N/A").tag(AudioDevice.none)
+                    ForEach(viewModel.deviceManager.outputDevices) { device in
+                        Text(device.name).tag(device)
+                    }
+                }
+                .labelsHidden()
+                .onChange(of: strip.selectedDevice) { _, newDevice in
+                    viewModel.selectOutputDevice(newDevice)
+                }
+
+                // Level meters
+                HStack(spacing: 4) {
+                    Text("L")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 12)
+                    VUMeterView(level: strip.levelLeft)
+                }
+                HStack(spacing: 4) {
+                    Text("R")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 12)
+                    VUMeterView(level: strip.levelRight)
+                }
+            }
+            .padding(8)
+        }
+        .backgroundStyle(Color(nsColor: .init(white: 0.16, alpha: 1.0)))
+    }
+}
