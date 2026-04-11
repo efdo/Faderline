@@ -89,6 +89,7 @@ final class MixerViewModel {
             try mixerEngine.start(inputs: inputs, output: output)
         } catch {
             print("⚠️ MixerEngine failed to start: \(error)")
+            mixerEngine.lastError = error.localizedDescription
         }
 
         saveConfiguration()
