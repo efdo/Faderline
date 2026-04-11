@@ -20,6 +20,7 @@ final class MixerViewModel {
 
         loadConfiguration()
         startLevelPolling()
+        rebuildEngine()
     }
 
     deinit {
@@ -71,6 +72,12 @@ final class MixerViewModel {
     // MARK: - Engine management
 
     private func rebuildEngine() {
+        print("[MixerVM] rebuildEngine called")
+        print("[MixerVM]   output device: id=\(mainOutput.selectedDevice.id), name=\(mainOutput.selectedDevice.name), uid=\(mainOutput.selectedDevice.uid)")
+        for strip in inputStrips {
+            print("[MixerVM]   input[\(strip.id)]: id=\(strip.selectedDevice.id), name=\(strip.selectedDevice.name), routeToMain=\(strip.routeToMain), L=\(strip.leftChannelIndex) R=\(strip.rightChannelIndex)")
+        }
+
         let inputs = inputStrips.map { strip in
             MixerEngine.InputConfig(
                 deviceID: strip.selectedDevice.id,
@@ -87,8 +94,9 @@ final class MixerViewModel {
 
         do {
             try mixerEngine.start(inputs: inputs, output: output)
+            print("[MixerVM] ✅ Engine started successfully, isRunning=\(mixerEngine.isRunning)")
         } catch {
-            print("⚠️ MixerEngine failed to start: \(error)")
+            print("[MixerVM] ❌ MixerEngine failed to start: \(error)")
             mixerEngine.lastError = error.localizedDescription
         }
 

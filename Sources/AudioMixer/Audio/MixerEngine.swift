@@ -1,24 +1,24 @@
 import AVFoundation
 import CoreAudio
 
-/// Manages audio routing: per-input capture engines → player nodes → main mixer → output.
+/// Manages audio routing: shared capture engines → player nodes → main mixer → output.
 ///
 /// Architecture:
-/// - Each input device gets its own `AVAudioEngine` for capture.
-/// - A tap on each capture engine's `inputNode` grabs PCM buffers.
-/// - Buffers are channel-remapped, sample-rate-converted, and scheduled into
-///   `AVAudioPlayerNode`s on the main output engine.
+/// - One `AVAudioEngine` per unique input device (shared when multiple strips use the same device).
+/// - A tap on each capture engine grabs all hardware channels.
+/// - Per-strip channel remapping extracts L/R and schedules into player nodes on the output engine.
 @Observable
 final class MixerEngine {
     private var outputEngine = AVAudioEngine()
-    private var captures: [Int: InputCapture] = [:]
-    private var inputMixerNodes: [Int: AVAudioMixerNode] = [:]
+    /// One capture engine per unique device ID.
+    private var sharedCaptures: [AudioDeviceID: SharedCapture] = [:]
+    /// Per-strip player + mixer on the output engine.
+    private var stripNodes: [Int: StripNodes] = [:]
 
     private(set) var inputLevels: [Int: (left: Float, right: Float)] = [:]
     private(set) var outputLevel: (left: Float, right: Float) = (0, 0)
     private(set) var isRunning = false
 
-    /// Last error message, displayed in the UI for diagnostics.
     var lastError: String?
 
     // MARK: - Configuration
@@ -35,13 +35,29 @@ final class MixerEngine {
         let deviceID: AudioDeviceID
     }
 
-    // MARK: - Per-input capture
+    // MARK: - Internal state
 
-    private struct InputCapture {
-        let captureEngine: AVAudioEngine
+    private struct SharedCapture {
+        let engine: AVAudioEngine
+        let hwFormat: AVAudioFormat
+    }
+
+    private struct StripNodes {
         let playerNode: AVAudioPlayerNode
+        let mixerNode: AVAudioMixerNode
+    }
+
+    /// Info passed into tap closures for each strip sharing a capture engine.
+    private struct TapTarget {
+        let stripIndex: Int
         let leftChannel: Int
         let rightChannel: Int
+        let playerNode: AVAudioPlayerNode
+        let converter: AVAudioConverter?
+        let inputStereoFormat: AVAudioFormat
+        let outputStereoFormat: AVAudioFormat
+        let outputRate: Double
+        let inputRate: Double
     }
 
     // MARK: - Engine lifecycle
@@ -50,129 +66,144 @@ final class MixerEngine {
         stop()
         lastError = nil
 
+        log("start() — output=\(output.deviceID), \(inputs.count) inputs")
+
         guard output.deviceID != kAudioObjectUnknown else {
-            log("No output device selected, skipping engine start")
+            log("⏭️ No output device, skipping")
             return
         }
 
         outputEngine = AVAudioEngine()
-
-        // Set the output device and query its native format
         try setOutputDevice(output.deviceID, on: outputEngine)
-        let outputHwFormat = outputEngine.outputNode.outputFormat(forBus: 0)
-        let outputRate = outputHwFormat.sampleRate
+
+        let outputRate = outputEngine.outputNode.outputFormat(forBus: 0).sampleRate
         guard outputRate > 0 else {
-            throw MixerError.invalidFormat("Output device sample rate is 0")
+            throw MixerError.invalidFormat("Output sample rate is 0")
         }
         let stereoFormat = AVAudioFormat(standardFormatWithSampleRate: outputRate, channels: 2)!
-        log("Output engine: rate=\(outputRate) Hz, format=\(stereoFormat)")
+        log("Output: rate=\(outputRate) Hz")
 
         let mainMixer = outputEngine.mainMixerNode
 
+        // Group active inputs by device ID
+        var deviceStrips: [AudioDeviceID: [(index: Int, config: InputConfig)]] = [:]
         for (index, input) in inputs.enumerated() {
             guard input.routeToMain, input.deviceID != kAudioObjectUnknown else { continue }
+            deviceStrips[input.deviceID, default: []].append((index, input))
+        }
 
-            // --- Player + mixer on the output engine ---
-            let playerNode = AVAudioPlayerNode()
-            let mixerNode = AVAudioMixerNode()
-            outputEngine.attach(playerNode)
-            outputEngine.attach(mixerNode)
-            outputEngine.connect(playerNode, to: mixerNode, format: stereoFormat)
-            outputEngine.connect(mixerNode, to: mainMixer, format: stereoFormat)
-            mixerNode.volume = input.volume
-            inputMixerNodes[index] = mixerNode
-
-            // --- Capture engine for this input device ---
+        // For each unique device, create ONE shared capture engine
+        for (deviceID, strips) in deviceStrips {
             let captureEngine = AVAudioEngine()
-            try setInputDevice(input.deviceID, on: captureEngine)
+            try setInputDevice(deviceID, on: captureEngine)
 
             let inputNode = captureEngine.inputNode
             let hwFormat = inputNode.outputFormat(forBus: 0)
             let inputRate = hwFormat.sampleRate
-            log("Input[\(index)]: device=\(input.deviceID), hwChannels=\(hwFormat.channelCount), rate=\(inputRate) Hz, L=ch\(input.leftChannel) R=ch\(input.rightChannel)")
+            log("Device \(deviceID): hwChannels=\(hwFormat.channelCount), rate=\(inputRate) Hz, serving \(strips.count) strip(s)")
 
             guard inputRate > 0 else {
-                throw MixerError.invalidFormat("Input device \(input.deviceID) sample rate is 0")
+                throw MixerError.invalidFormat("Input device \(deviceID) sample rate is 0")
             }
 
-            // Build a valid graph on the capture engine (output is silenced)
+            // Build valid graph on capture engine (silenced output)
             let captureMixer = captureEngine.mainMixerNode
             captureEngine.connect(inputNode, to: captureMixer, format: hwFormat)
             captureMixer.outputVolume = 0
 
-            let capture = InputCapture(
-                captureEngine: captureEngine,
-                playerNode: playerNode,
-                leftChannel: input.leftChannel,
-                rightChannel: input.rightChannel
-            )
-            captures[index] = capture
+            sharedCaptures[deviceID] = SharedCapture(engine: captureEngine, hwFormat: hwFormat)
 
-            // Prepare sample-rate converter if input ≠ output rate
-            let inputStereo = AVAudioFormat(standardFormatWithSampleRate: inputRate, channels: 2)!
-            let needsSRC = abs(inputRate - outputRate) > 1.0
-            let converter: AVAudioConverter? = needsSRC
-                ? AVAudioConverter(from: inputStereo, to: stereoFormat)
-                : nil
-            if needsSRC {
-                log("Input[\(index)]: will convert \(inputRate) → \(outputRate) Hz")
+            // Create player+mixer nodes for each strip using this device
+            var tapTargets: [TapTarget] = []
+
+            for (index, input) in strips {
+                let playerNode = AVAudioPlayerNode()
+                let mixerNode = AVAudioMixerNode()
+                outputEngine.attach(playerNode)
+                outputEngine.attach(mixerNode)
+                outputEngine.connect(playerNode, to: mixerNode, format: stereoFormat)
+                outputEngine.connect(mixerNode, to: mainMixer, format: stereoFormat)
+                mixerNode.volume = input.volume
+                stripNodes[index] = StripNodes(playerNode: playerNode, mixerNode: mixerNode)
+
+                let inputStereo = AVAudioFormat(standardFormatWithSampleRate: inputRate, channels: 2)!
+                let needsSRC = abs(inputRate - outputRate) > 1.0
+                let converter: AVAudioConverter? = needsSRC
+                    ? AVAudioConverter(from: inputStereo, to: stereoFormat)
+                    : nil
+
+                tapTargets.append(TapTarget(
+                    stripIndex: index,
+                    leftChannel: input.leftChannel,
+                    rightChannel: input.rightChannel,
+                    playerNode: playerNode,
+                    converter: converter,
+                    inputStereoFormat: inputStereo,
+                    outputStereoFormat: stereoFormat,
+                    outputRate: outputRate,
+                    inputRate: inputRate
+                ))
+
+                log("  Strip[\(index)]: L=ch\(input.leftChannel) R=ch\(input.rightChannel), vol=\(input.volume)")
             }
 
-            // Install tap
-            let leftCh = input.leftChannel
-            let rightCh = input.rightChannel
+            // Single tap on the shared capture engine, distributes to all strips
             let weakSelf = Weak(self)
-            let captureIndex = index
+            let targets = tapTargets
 
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: hwFormat) {
-                [weakSelf, converter, inputStereo] buffer, _ in
+            inputNode.installTap(onBus: 0, bufferSize: 512, format: hwFormat) { buffer, _ in
                 guard let engine = weakSelf.value else { return }
 
-                // 1) Remap channels to stereo at the INPUT sample rate
-                let remapped = engine.remapChannels(
-                    buffer: buffer,
-                    leftChannel: leftCh,
-                    rightChannel: rightCh,
-                    outputFormat: inputStereo
-                )
+                for target in targets {
+                    // 1) Remap channels at input sample rate
+                    let remapped = engine.remapChannels(
+                        buffer: buffer,
+                        leftChannel: target.leftChannel,
+                        rightChannel: target.rightChannel,
+                        outputFormat: target.inputStereoFormat
+                    )
 
-                // 2) Convert sample rate if needed
-                let finalBuffer: AVAudioPCMBuffer
-                if let converter {
-                    let ratio = outputRate / inputRate
-                    let outFrames = AVAudioFrameCount(Double(remapped.frameLength) * ratio) + 2
-                    guard let converted = AVAudioPCMBuffer(pcmFormat: stereoFormat, frameCapacity: outFrames) else { return }
+                    // 2) Sample rate convert if needed
+                    let finalBuffer: AVAudioPCMBuffer
+                    if let converter = target.converter {
+                        let ratio = target.outputRate / target.inputRate
+                        let outFrames = AVAudioFrameCount(Double(remapped.frameLength) * ratio) + 2
+                        guard let converted = AVAudioPCMBuffer(
+                            pcmFormat: target.outputStereoFormat,
+                            frameCapacity: outFrames
+                        ) else { continue }
 
-                    var gotInput = false
-                    var convError: NSError?
-                    let status = converter.convert(to: converted, error: &convError) { _, outStatus in
-                        if gotInput {
-                            outStatus.pointee = .noDataNow
-                            return nil
+                        var gotInput = false
+                        let status = converter.convert(to: converted, error: nil) { _, outStatus in
+                            if gotInput {
+                                outStatus.pointee = .noDataNow
+                                return nil
+                            }
+                            gotInput = true
+                            outStatus.pointee = .haveData
+                            return remapped
                         }
-                        gotInput = true
-                        outStatus.pointee = .haveData
-                        return remapped
+                        guard status != .error else { continue }
+                        finalBuffer = converted
+                    } else {
+                        finalBuffer = remapped
                     }
-                    guard status != .error else { return }
-                    finalBuffer = converted
-                } else {
-                    finalBuffer = remapped
-                }
 
-                // 3) Update input levels
-                let levels = MixerEngine.calculateLevels(buffer: finalBuffer)
-                DispatchQueue.main.async {
-                    engine.inputLevels[captureIndex] = levels
-                }
+                    // 3) Update levels
+                    let levels = MixerEngine.calculateLevels(buffer: finalBuffer)
+                    let idx = target.stripIndex
+                    DispatchQueue.main.async {
+                        engine.inputLevels[idx] = levels
+                    }
 
-                // 4) Schedule for playback
-                playerNode.scheduleBuffer(finalBuffer)
+                    // 4) Schedule for playback
+                    target.playerNode.scheduleBuffer(finalBuffer)
+                }
             }
         }
 
-        // Output level metering tap
-        mainMixer.installTap(onBus: 0, bufferSize: 1024, format: stereoFormat) { [weak self] buffer, _ in
+        // Output level metering
+        mainMixer.installTap(onBus: 0, bufferSize: 512, format: stereoFormat) { [weak self] buffer, _ in
             guard let self else { return }
             let levels = MixerEngine.calculateLevels(buffer: buffer)
             DispatchQueue.main.async {
@@ -180,61 +211,64 @@ final class MixerEngine {
             }
         }
 
-        // Start output engine FIRST so player nodes are ready to accept buffers
+        // Start output engine + player nodes first
         outputEngine.prepare()
         try outputEngine.start()
         log("Output engine started")
 
-        // Start player nodes BEFORE capture engines to avoid dropping early buffers
-        for (_, capture) in captures {
-            capture.playerNode.play()
+        for (idx, nodes) in stripNodes {
+            nodes.playerNode.play()
+            log("Player[\(idx)] playing")
         }
-        log("Player nodes playing")
 
-        // Now start capture engines — taps will begin firing
-        for (idx, capture) in captures {
-            capture.captureEngine.prepare()
+        // Start capture engines last
+        for (deviceID, capture) in sharedCaptures {
+            capture.engine.prepare()
             do {
-                try capture.captureEngine.start()
-                log("Capture engine[\(idx)] started")
+                try capture.engine.start()
+                log("Capture engine (device \(deviceID)) started")
             } catch {
-                log("⚠️ Capture engine[\(idx)] failed: \(error)")
+                log("⚠️ Capture engine (device \(deviceID)) failed: \(error)")
                 throw MixerError.engineStartFailed(error)
             }
         }
 
         isRunning = true
-        log("✅ Audio pipeline running with \(captures.count) input(s)")
+        log("✅ Pipeline running: \(sharedCaptures.count) capture engine(s), \(stripNodes.count) strip(s)")
     }
 
     func stop() {
-        for (_, capture) in captures {
-            capture.captureEngine.inputNode.removeTap(onBus: 0)
-            capture.captureEngine.stop()
-            capture.playerNode.stop()
+        for (_, capture) in sharedCaptures {
+            capture.engine.inputNode.removeTap(onBus: 0)
+            capture.engine.stop()
         }
-        captures.removeAll()
+        sharedCaptures.removeAll()
+
+        for (_, nodes) in stripNodes {
+            nodes.playerNode.stop()
+        }
 
         if isRunning {
             outputEngine.mainMixerNode.removeTap(onBus: 0)
             outputEngine.stop()
         }
 
-        for (_, node) in inputMixerNodes {
-            outputEngine.detach(node)
+        for (_, nodes) in stripNodes {
+            outputEngine.detach(nodes.playerNode)
+            outputEngine.detach(nodes.mixerNode)
         }
-        inputMixerNodes.removeAll()
+        stripNodes.removeAll()
         inputLevels.removeAll()
         outputLevel = (0, 0)
         isRunning = false
     }
 
     func setVolume(_ volume: Float, forInput index: Int) {
-        inputMixerNodes[index]?.volume = volume
+        stripNodes[index]?.mixerNode.volume = volume
     }
 
     func setRouteToMain(_ enabled: Bool, forInput index: Int) {
-        inputMixerNodes[index]?.volume = enabled ? 1.0 : 0.0
+        stripNodes[index]?.mixerNode.volume = enabled ? 1.0 : 0.0
     }
 
     // MARK: - Device assignment
@@ -242,24 +276,28 @@ final class MixerEngine {
     private func setOutputDevice(_ deviceID: AudioDeviceID, on engine: AVAudioEngine) throws {
         guard deviceID != kAudioObjectUnknown else { return }
         var id = deviceID
+        log("setOutputDevice(\(deviceID))")
         let status = AudioUnitSetProperty(
             engine.outputNode.audioUnit!,
             kAudioOutputUnitProperty_CurrentDevice,
             kAudioUnitScope_Global, 0,
             &id, UInt32(MemoryLayout<AudioDeviceID>.size)
         )
+        log("  → \(status == noErr ? "OK" : "FAIL(\(status))")")
         guard status == noErr else { throw MixerError.cannotSetOutputDevice(status) }
     }
 
     private func setInputDevice(_ deviceID: AudioDeviceID, on engine: AVAudioEngine) throws {
         guard deviceID != kAudioObjectUnknown else { return }
         var id = deviceID
+        log("setInputDevice(\(deviceID))")
         let status = AudioUnitSetProperty(
             engine.inputNode.audioUnit!,
             kAudioOutputUnitProperty_CurrentDevice,
             kAudioUnitScope_Global, 0,
             &id, UInt32(MemoryLayout<AudioDeviceID>.size)
         )
+        log("  → \(status == noErr ? "OK" : "FAIL(\(status))")")
         guard status == noErr else { throw MixerError.cannotSetInputDevice(status) }
     }
 
