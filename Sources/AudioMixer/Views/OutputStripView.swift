@@ -16,7 +16,7 @@ struct OutputStripView: View {
                 // Device picker
                 Picker("", selection: Binding(
                     get: { strip.selectedDevice },
-                    set: { _ in }  // handled below
+                    set: { viewModel.selectOutputDevice($0) }
                 )) {
                     Text("N/A").tag(AudioDevice.none)
                     ForEach(viewModel.deviceManager.outputDevices) { device in
@@ -24,9 +24,6 @@ struct OutputStripView: View {
                     }
                 }
                 .labelsHidden()
-                .onChange(of: strip.selectedDevice) { _, newDevice in
-                    viewModel.selectOutputDevice(newDevice)
-                }
 
                 // Level meters
                 HStack(spacing: 4) {
