@@ -1,23 +1,30 @@
 import AVFoundation
 import CoreAudio
 
-/// Manages the AVAudioEngine graph: inputs → per-input mixer → main mixer → output.
+/// Manages audio routing: per-input capture engines → player nodes → main mixer → output.
+///
+/// Architecture:
+/// - Each input device gets its own `AVAudioEngine` for capture.
+/// - A tap on each capture engine's `inputNode` grabs PCM buffers.
+/// - Buffers are channel-remapped and scheduled into `AVAudioPlayerNode`s
+///   on the main output engine.
+/// - The main engine's graph: playerNode → mixerNode (volume) → mainMixer → outputNode.
 @Observable
 final class MixerEngine {
-    private let engine = AVAudioEngine()
+    /// The output engine that mixes all inputs and sends to the selected output device.
+    private var outputEngine = AVAudioEngine()
 
-    /// Per-input player nodes that read from input devices.
-    private var inputNodes: [Int: AVAudioInputNode] = [:]
+    /// Per-input capture state.
+    private var captures: [Int: InputCapture] = [:]
+
+    /// Per-input mixer nodes on the output engine (for volume control).
     private var inputMixerNodes: [Int: AVAudioMixerNode] = [:]
-    private var inputTapBlocks: [Int: Bool] = [:]
 
     /// Level meter values (0.0 – 1.0) updated from audio taps.
     private(set) var inputLevels: [Int: (left: Float, right: Float)] = [:]
     private(set) var outputLevel: (left: Float, right: Float) = (0, 0)
 
     private(set) var isRunning = false
-    private var currentInputDeviceIDs: [Int: AudioDeviceID] = [:]
-    private var currentOutputDeviceID: AudioDeviceID?
 
     // MARK: - Configuration
 
@@ -33,68 +40,134 @@ final class MixerEngine {
         let deviceID: AudioDeviceID
     }
 
+    // MARK: - Per-input capture
+
+    private struct InputCapture {
+        let captureEngine: AVAudioEngine
+        let playerNode: AVAudioPlayerNode
+        let leftChannel: Int
+        let rightChannel: Int
+    }
+
     // MARK: - Engine lifecycle
 
-    /// Build and start the audio engine with the given configuration.
+    /// Build and start the full audio graph with the given configuration.
     func start(inputs: [InputConfig], output: OutputConfig) throws {
         stop()
 
-        // Set the output device on the engine's output node.
-        try setOutputDevice(output.deviceID)
+        outputEngine = AVAudioEngine()
 
-        let mainMixer = engine.mainMixerNode
-        let outputFormat = mainMixer.outputFormat(forBus: 0)
-        let stereoFormat = AVAudioFormat(
-            standardFormatWithSampleRate: outputFormat.sampleRate,
-            channels: 2
-        )!
+        // Set the output device on the output engine.
+        try setOutputDevice(output.deviceID, on: outputEngine)
 
-        // For each input, create an aggregate approach:
-        // We'll use separate AVAudioEngine instances per input device to capture,
-        // then pipe into the main engine via mixer nodes.
-        //
-        // Simpler approach for v1: Use the system's aggregate device or
-        // tap each device using CoreAudio directly and push buffers.
-        //
-        // For now, we use a practical approach: one engine, schedule buffers
-        // from CoreAudio input taps into player nodes.
+        let mainMixer = outputEngine.mainMixerNode
+        let sampleRate = mainMixer.outputFormat(forBus: 0).sampleRate
+        let stereoFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 
         for (index, input) in inputs.enumerated() {
             guard input.routeToMain, input.deviceID != kAudioObjectUnknown else { continue }
 
+            // --- Player + mixer on the output engine ---
+            let playerNode = AVAudioPlayerNode()
             let mixerNode = AVAudioMixerNode()
-            engine.attach(mixerNode)
-            engine.connect(mixerNode, to: mainMixer, format: stereoFormat)
+            outputEngine.attach(playerNode)
+            outputEngine.attach(mixerNode)
+            outputEngine.connect(playerNode, to: mixerNode, format: stereoFormat)
+            outputEngine.connect(mixerNode, to: mainMixer, format: stereoFormat)
             mixerNode.volume = input.volume
             inputMixerNodes[index] = mixerNode
 
-            // Install input tap via CoreAudio for this specific device
-            startInputCapture(
-                index: index,
-                deviceID: input.deviceID,
+            // --- Capture engine for this input device ---
+            let captureEngine = AVAudioEngine()
+            try setInputDevice(input.deviceID, on: captureEngine)
+
+            let inputNode = captureEngine.inputNode
+            let hwFormat = inputNode.outputFormat(forBus: 0)
+
+            // We need to connect inputNode → mainMixer on the capture engine
+            // so it has a valid graph. We won't use the capture engine's output.
+            let captureMixer = captureEngine.mainMixerNode
+            captureEngine.connect(inputNode, to: captureMixer, format: hwFormat)
+            // Silence the capture engine's output so it doesn't play back through speakers
+            captureMixer.outputVolume = 0
+
+            let capture = InputCapture(
+                captureEngine: captureEngine,
+                playerNode: playerNode,
                 leftChannel: input.leftChannel,
-                rightChannel: input.rightChannel,
-                mixerNode: mixerNode,
-                format: stereoFormat
+                rightChannel: input.rightChannel
             )
+            captures[index] = capture
+
+            // Install tap to grab audio and push into the output engine's player node
+            let leftCh = input.leftChannel
+            let rightCh = input.rightChannel
+            let weakSelf = Weak(self)
+            let captureIndex = index
+
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: hwFormat) { [weakSelf] buffer, _ in
+                guard let engine = weakSelf.value else { return }
+                let remapped = engine.remapChannels(
+                    buffer: buffer,
+                    leftChannel: leftCh,
+                    rightChannel: rightCh,
+                    outputFormat: stereoFormat
+                )
+                // Update input levels
+                let levels = MixerEngine.calculateLevels(buffer: remapped)
+                DispatchQueue.main.async {
+                    engine.inputLevels[captureIndex] = levels
+                }
+                // Schedule the remapped buffer for playback on the output engine
+                playerNode.scheduleBuffer(remapped)
+            }
         }
 
         // Install tap on main mixer for output level metering
-        installOutputLevelTap(on: mainMixer, format: stereoFormat)
+        let outputTapFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
+        mainMixer.installTap(onBus: 0, bufferSize: 1024, format: outputTapFormat) { [weak self] buffer, _ in
+            guard let self else { return }
+            let levels = MixerEngine.calculateLevels(buffer: buffer)
+            DispatchQueue.main.async {
+                self.outputLevel = levels
+            }
+        }
 
-        engine.prepare()
-        try engine.start()
+        // Start all engines: capture engines first, then the output engine
+        for (_, capture) in captures {
+            capture.captureEngine.prepare()
+            try capture.captureEngine.start()
+        }
+
+        outputEngine.prepare()
+        try outputEngine.start()
+
+        // Start all player nodes
+        for (_, capture) in captures {
+            capture.playerNode.play()
+        }
+
         isRunning = true
     }
 
     func stop() {
-        if isRunning {
-            engine.stop()
+        // Stop capture engines and remove taps
+        for (_, capture) in captures {
+            capture.captureEngine.inputNode.removeTap(onBus: 0)
+            capture.captureEngine.stop()
+            capture.playerNode.stop()
         }
-        stopAllInputCaptures()
+        captures.removeAll()
 
+        // Remove output tap and stop
+        if isRunning {
+            outputEngine.mainMixerNode.removeTap(onBus: 0)
+            outputEngine.stop()
+        }
+
+        // Detach all nodes from the output engine
         for (_, node) in inputMixerNodes {
-            engine.detach(node)
+            outputEngine.detach(node)
         }
         inputMixerNodes.removeAll()
         inputLevels.removeAll()
@@ -107,147 +180,77 @@ final class MixerEngine {
         inputMixerNodes[index]?.volume = volume
     }
 
-    /// Mute/unmute an input by disconnecting/reconnecting its mixer node.
+    /// Mute/unmute an input strip.
     func setRouteToMain(_ enabled: Bool, forInput index: Int) {
-        guard let node = inputMixerNodes[index] else { return }
-        node.volume = enabled ? 1.0 : 0.0
+        inputMixerNodes[index]?.volume = enabled ? 1.0 : 0.0
     }
 
-    // MARK: - Output device selection
+    // MARK: - Device assignment
 
-    private func setOutputDevice(_ deviceID: AudioDeviceID) throws {
+    private func setOutputDevice(_ deviceID: AudioDeviceID, on engine: AVAudioEngine) throws {
         guard deviceID != kAudioObjectUnknown else { return }
-
-        let outputNode = engine.outputNode
-        var deviceIDVar = deviceID
-        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
-
+        var id = deviceID
         let status = AudioUnitSetProperty(
-            outputNode.audioUnit!,
+            engine.outputNode.audioUnit!,
             kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &deviceIDVar,
-            size
+            kAudioUnitScope_Global, 0,
+            &id, UInt32(MemoryLayout<AudioDeviceID>.size)
         )
-        guard status == noErr else {
-            throw MixerError.cannotSetOutputDevice(status)
-        }
-        currentOutputDeviceID = deviceID
+        guard status == noErr else { throw MixerError.cannotSetOutputDevice(status) }
     }
 
-    // MARK: - Input capture using CoreAudio
+    private func setInputDevice(_ deviceID: AudioDeviceID, on engine: AVAudioEngine) throws {
+        guard deviceID != kAudioObjectUnknown else { return }
+        var id = deviceID
+        let status = AudioUnitSetProperty(
+            engine.inputNode.audioUnit!,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global, 0,
+            &id, UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        guard status == noErr else { throw MixerError.cannotSetInputDevice(status) }
+    }
 
-    /// Per-input capture state
-    private var inputCaptureUnits: [Int: AudioComponentInstance] = [:]
+    // MARK: - Channel remapping
 
-    private func startInputCapture(
-        index: Int,
-        deviceID: AudioDeviceID,
+    /// Takes a multi-channel input buffer and produces a stereo buffer
+    /// with the specified channels mapped to L and R.
+    private func remapChannels(
+        buffer: AVAudioPCMBuffer,
         leftChannel: Int,
         rightChannel: Int,
-        mixerNode: AVAudioMixerNode,
-        format: AVAudioFormat
-    ) {
-        // Create an AUHAL (Audio Unit HAL) for this input device
-        var componentDescription = AudioComponentDescription(
-            componentType: kAudioUnitType_Output,
-            componentSubType: kAudioUnitSubType_HALOutput,
-            componentManufacturer: kAudioUnitManufacturer_Apple,
-            componentFlags: 0,
-            componentFlagsMask: 0
-        )
-
-        guard let component = AudioComponentFindNext(nil, &componentDescription) else { return }
-
-        var audioUnit: AudioComponentInstance?
-        guard AudioComponentInstanceNew(component, &audioUnit) == noErr,
-              let unit = audioUnit else { return }
-
-        // Enable input on the AUHAL
-        var enableIO: UInt32 = 1
-        AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO,
-                             kAudioUnitScope_Input, 1, &enableIO,
-                             UInt32(MemoryLayout<UInt32>.size))
-
-        // Disable output on the AUHAL (we only want to capture)
-        var disableIO: UInt32 = 0
-        AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO,
-                             kAudioUnitScope_Output, 0, &disableIO,
-                             UInt32(MemoryLayout<UInt32>.size))
-
-        // Set the input device
-        var deviceIDVar = deviceID
-        AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
-                             kAudioUnitScope_Global, 0, &deviceIDVar,
-                             UInt32(MemoryLayout<AudioDeviceID>.size))
-
-        // Configure the stream format for output (what we read from the unit)
-        var streamFormat = AudioStreamBasicDescription(
-            mSampleRate: format.sampleRate,
-            mFormatID: kAudioFormatLinearPCM,
-            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved,
-            mBytesPerPacket: 4,
-            mFramesPerPacket: 1,
-            mBytesPerFrame: 4,
-            mChannelsPerFrame: 2,
-            mBitsPerChannel: 32,
-            mReserved: 0
-        )
-
-        AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat,
-                             kAudioUnitScope_Output, 1, &streamFormat,
-                             UInt32(MemoryLayout<AudioStreamBasicDescription>.size))
-
-        // Set up the render callback that will push audio into the mixer node
-        let context = InputCaptureContext(
-            engine: self,
-            index: index,
-            mixerNode: mixerNode,
-            format: format,
-            leftChannel: leftChannel,
-            rightChannel: rightChannel
-        )
-        let contextPtr = UnsafeMutablePointer<InputCaptureContext>.allocate(capacity: 1)
-        contextPtr.initialize(to: context)
-
-        var callbackStruct = AURenderCallbackStruct(
-            inputProc: inputRenderCallback,
-            inputProcRefCon: UnsafeMutableRawPointer(contextPtr)
-        )
-        AudioUnitSetProperty(unit, kAudioOutputUnitProperty_SetInputCallback,
-                             kAudioUnitScope_Global, 0, &callbackStruct,
-                             UInt32(MemoryLayout<AURenderCallbackStruct>.size))
-
-        AudioUnitInitialize(unit)
-        AudioOutputUnitStart(unit)
-        inputCaptureUnits[index] = unit
-    }
-
-    private func stopAllInputCaptures() {
-        for (_, unit) in inputCaptureUnits {
-            AudioOutputUnitStop(unit)
-            AudioUnitUninitialize(unit)
-            AudioComponentInstanceDispose(unit)
+        outputFormat: AVAudioFormat
+    ) -> AVAudioPCMBuffer {
+        let frameCount = buffer.frameLength
+        guard let outBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: frameCount) else {
+            return buffer
         }
-        inputCaptureUnits.removeAll()
-    }
+        outBuffer.frameLength = frameCount
 
-    // MARK: - Output level metering
-
-    private func installOutputLevelTap(on mixer: AVAudioMixerNode, format: AVAudioFormat) {
-        let tapFormat = AVAudioFormat(
-            standardFormatWithSampleRate: format.sampleRate,
-            channels: 2
-        )!
-
-        mixer.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
-            guard let self else { return }
-            let levels = Self.calculateLevels(buffer: buffer)
-            DispatchQueue.main.async {
-                self.outputLevel = levels
-            }
+        guard let srcData = buffer.floatChannelData,
+              let dstData = outBuffer.floatChannelData else {
+            return buffer
         }
+
+        let srcChannelCount = Int(buffer.format.channelCount)
+        let frames = Int(frameCount)
+
+        // Map selected left channel → output L
+        if leftChannel < srcChannelCount {
+            memcpy(dstData[0], srcData[leftChannel], frames * MemoryLayout<Float>.size)
+        } else {
+            // If channel doesn't exist, fill with silence
+            memset(dstData[0], 0, frames * MemoryLayout<Float>.size)
+        }
+
+        // Map selected right channel → output R
+        if rightChannel < srcChannelCount {
+            memcpy(dstData[1], srcData[rightChannel], frames * MemoryLayout<Float>.size)
+        } else {
+            memset(dstData[1], 0, frames * MemoryLayout<Float>.size)
+        }
+
+        return outBuffer
     }
 
     // MARK: - Level calculation
@@ -270,48 +273,32 @@ final class MixerEngine {
         let left = rms(channelData[0], count: frameCount)
         let right = channelCount > 1 ? rms(channelData[1], count: frameCount) : left
 
-        // Convert to a 0–1 range with some scaling for visual display
+        // Scale for visual display (0–1 range)
         let scale: Float = 1.4
         return (min(left * scale, 1.0), min(right * scale, 1.0))
     }
 }
 
-// MARK: - Input render callback
+// MARK: - Weak wrapper for use in closures (avoids capturing self strongly in C-bridged contexts)
 
-private struct InputCaptureContext {
-    weak var engine: MixerEngine?
-    let index: Int
-    let mixerNode: AVAudioMixerNode
-    let format: AVAudioFormat
-    let leftChannel: Int
-    let rightChannel: Int
-}
-
-private func inputRenderCallback(
-    inRefCon: UnsafeMutableRawPointer,
-    ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
-    inTimeStamp: UnsafePointer<AudioTimeStamp>,
-    inBusNumber: UInt32,
-    inNumberFrames: UInt32,
-    ioData: UnsafeMutablePointer<AudioBufferList>?
-) -> OSStatus {
-    // This callback is invoked by the AUHAL when input data is available.
-    // In a full implementation, we'd render from the AUHAL into a buffer,
-    // remap channels, and schedule into the AVAudioEngine player node.
-    // For v1, this is a placeholder that will be connected during integration.
-    return noErr
+private struct Weak<T: AnyObject> {
+    weak var value: T?
+    init(_ value: T) { self.value = value }
 }
 
 // MARK: - Errors
 
 enum MixerError: Error, LocalizedError {
     case cannotSetOutputDevice(OSStatus)
+    case cannotSetInputDevice(OSStatus)
     case engineStartFailed(Error)
 
     var errorDescription: String? {
         switch self {
         case .cannotSetOutputDevice(let status):
             return "Cannot set output device (error \(status))"
+        case .cannotSetInputDevice(let status):
+            return "Cannot set input device (error \(status))"
         case .engineStartFailed(let error):
             return "Engine failed to start: \(error.localizedDescription)"
         }
