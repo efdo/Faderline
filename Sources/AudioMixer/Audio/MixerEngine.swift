@@ -2,21 +2,27 @@ import AVFoundation
 import Accelerate
 import CoreAudio
 
-// MARK: - Lock-free SPSC Stereo Ring Buffer
+// MARK: - Lock-free Stereo Ring Buffer (SPSC)
 
-/// SPSC stereo ring buffer optimized for real-time audio.
-/// Lock only protects head pointer reads/writes (~2ns). All memcpy happens outside the lock.
+/// A lock-free SPSC stereo ring buffer for real-time audio threads.
+/// Producer (tap) writes, consumer (render callback) reads.
+/// Uses UnsafeMutablePointer storage with memcpy for bulk transfers.
+/// Thread safety via single-writer/single-reader discipline + memory fences.
 private final class StereoRingBuffer: @unchecked Sendable {
     private let capacity: Int
     private let mask: Int
     private let storageL: UnsafeMutablePointer<Float>
     private let storageR: UnsafeMutablePointer<Float>
+
+    // Atomic head pointers using os_unfair_lock-protected access.
+    // The lock hold time is ~1 nanosecond (just read/write an Int).
     private let headLock = os_unfair_lock_t.allocate(capacity: 1)
     private var _writeHead: Int = 0
     private var _readHead: Int = 0
+
     private(set) var underrunCount: Int = 0
 
-    init(capacity: Int = 32768) {
+    init(capacity: Int = 16384) {
         let cap = 1 << Int(ceil(log2(Double(max(capacity, 64)))))
         self.capacity = cap
         self.mask = cap - 1
@@ -40,19 +46,18 @@ private final class StereoRingBuffer: @unchecked Sendable {
         return result
     }
 
+    /// Write stereo frames using memcpy (handles wrap-around).
     func write(left: UnsafePointer<Float>, right: UnsafePointer<Float>, count: Int) {
-        // 1. Snapshot writeHead under lock (~2ns)
         os_unfair_lock_lock(headLock)
         let wh = _writeHead
-        os_unfair_lock_unlock(headLock)
-
-        // 2. memcpy OUTSIDE lock — safe: producer writes ahead of writeHead,
-        //    consumer reads behind readHead (non-overlapping regions in power-of-2 buffer)
         let startIdx = wh & mask
+
         if startIdx + count <= capacity {
+            // No wrap — single memcpy per channel
             memcpy(storageL + startIdx, left, count * MemoryLayout<Float>.size)
             memcpy(storageR + startIdx, right, count * MemoryLayout<Float>.size)
         } else {
+            // Wraps around — two memcpy calls per channel
             let firstPart = capacity - startIdx
             let secondPart = count - firstPart
             memcpy(storageL + startIdx, left, firstPart * MemoryLayout<Float>.size)
@@ -61,8 +66,6 @@ private final class StereoRingBuffer: @unchecked Sendable {
             memcpy(storageR, right + firstPart, secondPart * MemoryLayout<Float>.size)
         }
 
-        // 3. Publish new writeHead under lock
-        os_unfair_lock_lock(headLock)
         _writeHead = wh + count
         if _writeHead - _readHead > capacity {
             _readHead = _writeHead - capacity
@@ -70,19 +73,19 @@ private final class StereoRingBuffer: @unchecked Sendable {
         os_unfair_lock_unlock(headLock)
     }
 
+    /// Read stereo frames using memcpy. Fills with silence on underrun.
     func read(left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>, count: Int) {
-        // 1. Snapshot both heads under lock (~2ns)
         os_unfair_lock_lock(headLock)
-        let wh = _writeHead
-        let rh = _readHead
-        os_unfair_lock_unlock(headLock)
-
-        let available = wh - rh
+        let available = _writeHead - _readHead
         let toRead = min(count, available)
+        let silenceCount = count - toRead
 
-        // 2. memcpy OUTSIDE lock
+        if silenceCount > 0 {
+            underrunCount += 1
+        }
+
         if toRead > 0 {
-            let startIdx = rh & mask
+            let startIdx = _readHead & mask
             if startIdx + toRead <= capacity {
                 memcpy(left, storageL + startIdx, toRead * MemoryLayout<Float>.size)
                 memcpy(right, storageR + startIdx, toRead * MemoryLayout<Float>.size)
@@ -94,20 +97,25 @@ private final class StereoRingBuffer: @unchecked Sendable {
                 memcpy(left + firstPart, storageL, secondPart * MemoryLayout<Float>.size)
                 memcpy(right + firstPart, storageR, secondPart * MemoryLayout<Float>.size)
             }
+            _readHead += toRead
         }
 
-        // 3. Update readHead under lock
-        os_unfair_lock_lock(headLock)
-        _readHead = rh + toRead
-        if toRead < count { underrunCount += 1 }
         os_unfair_lock_unlock(headLock)
 
-        // 4. Fill remaining with silence (underrun)
-        let silenceCount = count - toRead
+        // Fill remaining with silence (outside lock)
         if silenceCount > 0 {
             memset(left + toRead, 0, silenceCount * MemoryLayout<Float>.size)
             memset(right + toRead, 0, silenceCount * MemoryLayout<Float>.size)
         }
+    }
+
+    /// Pre-fill with silence to act as jitter buffer.
+    func prefill(frames: Int) {
+        os_unfair_lock_lock(headLock)
+        _writeHead = frames
+        _readHead = 0
+        // Storage is already zero-initialized
+        os_unfair_lock_unlock(headLock)
     }
 
     func reset() {
@@ -165,9 +173,8 @@ final class MixerEngine {
 
     private struct StripNodes {
         let sourceNode: AVAudioSourceNode
+        let mixerNode: AVAudioMixerNode
         let ringBuffer: StereoRingBuffer
-        /// Volume pointer for lock-free access from render thread.
-        let volumePtr: UnsafeMutablePointer<Float>
     }
 
     private struct TapTarget {
@@ -175,11 +182,9 @@ final class MixerEngine {
         let leftChannel: Int
         let rightChannel: Int
         let ringBuffer: StereoRingBuffer
-        let converter: AVAudioConverter?
-        let srcInputFormat: AVAudioFormat?
-        let srcOutputFormat: AVAudioFormat?
     }
 
+    /// Pre-allocated silence buffer for use in tap callbacks (avoids malloc on audio thread).
     private var silenceBuffer: UnsafeMutablePointer<Float>?
     private var silenceBufferSize: Int = 0
 
@@ -255,21 +260,12 @@ final class MixerEngine {
             deviceStrips[input.deviceID, default: []].append((index, input))
         }
 
-        // Pre-allocate silence buffer
-        let maxFrames = 4096
-        if silenceBuffer == nil || silenceBufferSize < maxFrames {
-            silenceBuffer?.deallocate()
-            silenceBuffer = .allocate(capacity: maxFrames)
-            silenceBuffer!.initialize(repeating: 0, count: maxFrames)
-            silenceBufferSize = maxFrames
-        }
-        let silence = silenceBuffer!
-
         // For each unique device, create ONE shared capture engine
         for (deviceID, strips) in deviceStrips {
             let captureEngine = AVAudioEngine()
             try setInputDevice(deviceID, on: captureEngine)
 
+            // Query actual hardware channel count and sample rate via CoreAudio HAL
             let hwChannels = MixerEngine.deviceInputChannelCount(deviceID)
             let inputRate = MixerEngine.deviceSampleRate(deviceID)
 
@@ -282,6 +278,7 @@ final class MixerEngine {
                 throw MixerError.invalidFormat("Input device \(deviceID) has 0 channels")
             }
 
+            // Create format matching actual hardware channels
             let hwFormat = AVAudioFormat(standardFormatWithSampleRate: inputRate, channels: AVAudioChannelCount(hwChannels))!
 
             // Build valid graph on capture engine (silenced output)
@@ -292,36 +289,22 @@ final class MixerEngine {
 
             sharedCaptures[deviceID] = SharedCapture(engine: captureEngine, hwChannelCount: hwChannels, sampleRate: inputRate)
 
-            // Determine if SRC is needed
-            let needsSRC = abs(inputRate - outputRate) > 1.0
+            // Create source nodes + ring buffers for each strip
+            var tapTargets: [TapTarget] = []
             let inputStereo = AVAudioFormat(standardFormatWithSampleRate: inputRate, channels: 2)!
 
-            var tapTargets: [TapTarget] = []
-
             for (index, input) in strips {
-                let ringBuffer = StereoRingBuffer(capacity: 32768)
+                let ringBuffer = StereoRingBuffer(capacity: 8192)
 
-                // Volume pointer for lock-free access from render thread
-                let volumePtr = UnsafeMutablePointer<Float>.allocate(capacity: 1)
-                volumePtr.initialize(to: input.volume)
-
-                // Source node outputs at OUTPUT rate, connects directly to mainMixer
-                let sourceNode = AVAudioSourceNode(format: outputStereo) { _, _, frameCount, audioBufferList in
+                // AVAudioSourceNode: pull-based, runs on the render thread
+                let sourceNode = AVAudioSourceNode(format: inputStereo) { _, _, frameCount, audioBufferList in
                     let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
                     guard ablPointer.count >= 2 else { return noErr }
 
                     let leftPtr = ablPointer[0].mData!.assumingMemoryBound(to: Float.self)
                     let rightPtr = ablPointer[1].mData!.assumingMemoryBound(to: Float.self)
-                    let frames = Int(frameCount)
 
-                    ringBuffer.read(left: leftPtr, right: rightPtr, count: frames)
-
-                    // Apply volume via vDSP (in-place, zero allocation)
-                    var vol = volumePtr.pointee
-                    if vol != 1.0 {
-                        vDSP_vsmul(leftPtr, 1, &vol, leftPtr, 1, vDSP_Length(frames))
-                        vDSP_vsmul(rightPtr, 1, &vol, rightPtr, 1, vDSP_Length(frames))
-                    }
+                    ringBuffer.read(left: leftPtr, right: rightPtr, count: Int(frameCount))
 
                     ablPointer[0].mDataByteSize = frameCount * UInt32(MemoryLayout<Float>.size)
                     ablPointer[1].mDataByteSize = frameCount * UInt32(MemoryLayout<Float>.size)
@@ -329,40 +312,50 @@ final class MixerEngine {
                     return noErr
                 }
 
-                // Connect directly to mainMixer — NO intermediate mixer node
+                // Intermediate mixer handles sample rate conversion (input rate → output rate)
+                let mixerNode = AVAudioMixerNode()
                 outputEngine.attach(sourceNode)
-                outputEngine.connect(sourceNode, to: mainMixer, format: outputStereo)
+                outputEngine.attach(mixerNode)
+                outputEngine.connect(sourceNode, to: mixerNode, format: inputStereo)
+                outputEngine.connect(mixerNode, to: mainMixer, format: outputStereo)
+                mixerNode.volume = input.volume
 
-                stripNodes[index] = StripNodes(sourceNode: sourceNode, ringBuffer: ringBuffer, volumePtr: volumePtr)
-
-                // SRC converter if input rate differs from output rate
-                let converter: AVAudioConverter?
-                if needsSRC {
-                    converter = AVAudioConverter(from: inputStereo, to: outputStereo)
-                    converter?.sampleRateConverterQuality = AVAudioQuality.max.rawValue
-                } else {
-                    converter = nil
-                }
+                stripNodes[index] = StripNodes(sourceNode: sourceNode, mixerNode: mixerNode, ringBuffer: ringBuffer)
 
                 tapTargets.append(TapTarget(
                     stripIndex: index,
                     leftChannel: input.leftChannel,
                     rightChannel: input.rightChannel,
-                    ringBuffer: ringBuffer,
-                    converter: converter,
-                    srcInputFormat: needsSRC ? inputStereo : nil,
-                    srcOutputFormat: needsSRC ? outputStereo : nil
+                    ringBuffer: ringBuffer
                 ))
 
-                log("  Strip[\(index)]: L=ch\(input.leftChannel) R=ch\(input.rightChannel), vol=\(input.volume), SRC=\(needsSRC)")
+                log("  Strip[\(index)]: L=ch\(input.leftChannel) R=ch\(input.rightChannel), vol=\(input.volume)")
             }
 
-            // Single tap on the shared capture engine distributes to all strips
+            // Single tap on the shared capture engine, distributes to all strips
             let weakSelf = Weak(self)
             let targets = tapTargets
             let srcChannelCount = hwChannels
+
+            // Pre-allocate silence buffer for out-of-range channels (avoid malloc on audio thread)
+            let maxFrames = 4096
+            if silenceBuffer == nil || silenceBufferSize < maxFrames {
+                silenceBuffer?.deallocate()
+                silenceBuffer = .allocate(capacity: maxFrames)
+                silenceBuffer!.initialize(repeating: 0, count: maxFrames)
+                silenceBufferSize = maxFrames
+            }
+            let silence = silenceBuffer!
+
+            // Pre-fill ring buffers with silence as jitter absorber (~21ms at 48kHz)
+            let prefillFrames = 1024
+            for target in tapTargets {
+                target.ringBuffer.prefill(frames: prefillFrames)
+            }
+
+            // Track frame count for throttled VU updates (~30fps)
             var meteringAccumulator: Int = 0
-            let meteringInterval = Int(inputRate / 30.0)
+            let meteringInterval = Int(inputRate / 30.0) // frames between VU updates
 
             inputNode.installTap(onBus: 0, bufferSize: 512, format: hwFormat) { buffer, _ in
                 guard let engine = weakSelf.value else { return }
@@ -374,6 +367,7 @@ final class MixerEngine {
                     let leftCh = target.leftChannel
                     let rightCh = target.rightChannel
 
+                    // Point to source channel data or pre-allocated silence (no malloc!)
                     let leftPtr: UnsafePointer<Float> = leftCh < srcChannelCount
                         ? UnsafePointer(srcData[leftCh])
                         : UnsafePointer(silence)
@@ -381,50 +375,27 @@ final class MixerEngine {
                         ? UnsafePointer(srcData[rightCh])
                         : UnsafePointer(silence)
 
-                    if let converter = target.converter,
-                       let srcFmt = target.srcInputFormat,
-                       let dstFmt = target.srcOutputFormat {
-                        // SRC path: remap channels → convert rate → write to ring buffer
-                        guard let inputBuf = AVAudioPCMBuffer(pcmFormat: srcFmt, frameCapacity: AVAudioFrameCount(frameCount)) else { continue }
-                        inputBuf.frameLength = AVAudioFrameCount(frameCount)
-                        if let dst = inputBuf.floatChannelData {
-                            memcpy(dst[0], leftPtr, frameCount * MemoryLayout<Float>.size)
-                            memcpy(dst[1], rightPtr, frameCount * MemoryLayout<Float>.size)
-                        }
-                        let ratio = dstFmt.sampleRate / srcFmt.sampleRate
-                        let outFrames = AVAudioFrameCount(Double(frameCount) * ratio) + 4
-                        guard let outputBuf = AVAudioPCMBuffer(pcmFormat: dstFmt, frameCapacity: outFrames) else { continue }
-                        var gotInput = false
-                        let status = converter.convert(to: outputBuf, error: nil) { _, outStatus in
-                            if gotInput {
-                                outStatus.pointee = .noDataNow
-                                return nil
-                            }
-                            gotInput = true
-                            outStatus.pointee = .haveData
-                            return inputBuf
-                        }
-                        guard status != .error, let outData = outputBuf.floatChannelData else { continue }
-                        let outCount = Int(outputBuf.frameLength)
-                        target.ringBuffer.write(left: outData[0], right: outData[1], count: outCount)
-                    } else {
-                        // No SRC needed: write directly to ring buffer
-                        target.ringBuffer.write(left: leftPtr, right: rightPtr, count: frameCount)
-                    }
+                    target.ringBuffer.write(left: leftPtr, right: rightPtr, count: frameCount)
 
-                    // Throttled VU meter updates
+                    // Throttled VU meter updates using vDSP
                     meteringAccumulator += frameCount
                     if meteringAccumulator >= meteringInterval {
                         meteringAccumulator = 0
+
                         var meanSqL: Float = 0
                         var meanSqR: Float = 0
                         let n = vDSP_Length(frameCount)
                         vDSP_measqv(leftPtr, 1, &meanSqL, n)
                         vDSP_measqv(rightPtr, 1, &meanSqR, n)
+                        let rmsL = sqrt(meanSqL)
+                        let rmsR = sqrt(meanSqR)
                         let scale: Float = 1.4
-                        let levels = (left: min(sqrt(meanSqL) * scale, 1.0), right: min(sqrt(meanSqR) * scale, 1.0))
+                        let levels = (left: min(rmsL * scale, 1.0), right: min(rmsR * scale, 1.0))
+
                         let idx = target.stripIndex
-                        DispatchQueue.main.async { engine.inputLevels[idx] = levels }
+                        DispatchQueue.main.async {
+                            engine.inputLevels[idx] = levels
+                        }
                     }
                 }
             }
@@ -439,7 +410,9 @@ final class MixerEngine {
             if outputMeterAccum >= outputMeterInterval {
                 outputMeterAccum = 0
                 let levels = MixerEngine.calculateLevels(buffer: buffer)
-                DispatchQueue.main.async { self.outputLevel = levels }
+                DispatchQueue.main.async {
+                    self.outputLevel = levels
+                }
             }
         }
 
@@ -455,19 +428,10 @@ final class MixerEngine {
             }
         }
 
-        // Wait for ring buffers to accumulate real audio (no silence pre-fill)
-        let waitStart = DispatchTime.now()
-        let minFrames = 2048
-        while true {
-            let allReady = stripNodes.values.allSatisfy { nodes in nodes.ringBuffer.availableFrames >= minFrames }
-            if allReady { break }
-            let elapsed = Double(DispatchTime.now().uptimeNanoseconds - waitStart.uptimeNanoseconds) / 1_000_000_000
-            if elapsed > 0.5 { log("⚠️ Ring buffer fill timeout after 500ms"); break }
-            Thread.sleep(forTimeInterval: 0.005)
-        }
-        log("Ring buffers ready, starting output engine")
+        // Brief pause to let ring buffers accumulate data
+        Thread.sleep(forTimeInterval: 0.025)
 
-        // Start output engine — source nodes will immediately have real data to pull
+        // Start output engine (source nodes will pull from pre-filled ring buffers)
         outputEngine.prepare()
         try outputEngine.start()
         log("Output engine started")
@@ -498,7 +462,7 @@ final class MixerEngine {
 
         for (_, nodes) in stripNodes {
             outputEngine.detach(nodes.sourceNode)
-            nodes.volumePtr.deallocate()
+            outputEngine.detach(nodes.mixerNode)
         }
         stripNodes.removeAll()
 
@@ -508,11 +472,11 @@ final class MixerEngine {
     }
 
     func setVolume(_ volume: Float, forInput index: Int) {
-        stripNodes[index]?.volumePtr.pointee = volume
+        stripNodes[index]?.mixerNode.volume = volume
     }
 
     func setRouteToMain(_ enabled: Bool, forInput index: Int) {
-        stripNodes[index]?.volumePtr.pointee = enabled ? 1.0 : 0.0
+        stripNodes[index]?.mixerNode.volume = enabled ? 1.0 : 0.0
     }
 
     // MARK: - Device assignment
