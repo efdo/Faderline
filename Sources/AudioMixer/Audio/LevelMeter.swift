@@ -12,7 +12,7 @@ final class LevelMeter: @unchecked Sendable {
 
         node.installTap(onBus: bus, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self else { return }
-            let levels = MixerEngine.calculateLevels(buffer: buffer)
+            let levels = LegacyMixerEngine.calculateLevels(buffer: buffer)
             self.leftLevel = levels.left
             self.rightLevel = levels.right
         }

@@ -18,7 +18,11 @@
 		7B169049635F42F78A83745A /* InputStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EBE19FD16D34CBF9121585B /* InputStripView.swift */; };
 		8293CA45BC1A4157AD9769F2 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 786DFE9EF3C24401AF9AB122 /* CoreAudio.framework */; };
 		8E58769EA903459391395596 /* OutputStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8354BB0832FE45459065D883 /* OutputStripView.swift */; };
-		9BDFA349C3AC49C2B1FE2A1A /* MixerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0474FED8E94643CFB161F3C1 /* MixerEngine.swift */; };
+		9BDFA349C3AC49C2B1FE2A1A /* LegacyMixerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0474FED8E94643CFB161F3C1 /* LegacyMixerEngine.swift */; };
+		A1B2C3D4E5F60718293A4B01 /* ChannelRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B02 /* ChannelRingBuffer.swift */; };
+		A1B2C3D4E5F60718293A4B03 /* DriftCompensatingReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B04 /* DriftCompensatingReader.swift */; };
+		A1B2C3D4E5F60718293A4B05 /* HALAudioUnits.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B06 /* HALAudioUnits.swift */; };
+		A1B2C3D4E5F60718293A4B07 /* HALMixerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B08 /* HALMixerEngine.swift */; };
 		A86BAAAF64A3430BA1E00F4D /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 89C84597706C4D16AE115BAD /* AVFoundation.framework */; };
 		B0F9B84BE73F430696115552 /* VUMeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 216A2DD88A2A40A3AC8EB282 /* VUMeterView.swift */; };
 		B152648A277941A79F057A42 /* DeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7EEBBBFDAB44727A3FA09F6 /* DeviceManager.swift */; };
@@ -27,7 +31,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0474FED8E94643CFB161F3C1 /* MixerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerEngine.swift; sourceTree = "<group>"; };
+		0474FED8E94643CFB161F3C1 /* LegacyMixerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyMixerEngine.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B02 /* ChannelRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelRingBuffer.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B04 /* DriftCompensatingReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriftCompensatingReader.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B06 /* HALAudioUnits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HALAudioUnits.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B08 /* HALMixerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HALMixerEngine.swift; sourceTree = "<group>"; };
 		0F27C3ABF1454B14BC384661 /* AudioChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioChannel.swift; sourceTree = "<group>"; };
 		18B9EBFBC9A441A48E22BE19 /* LevelMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelMeter.swift; sourceTree = "<group>"; };
 		1E58BE60E14A4286BF87CA4B /* MixerConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerConfiguration.swift; sourceTree = "<group>"; };
@@ -109,7 +117,11 @@
 			children = (
 				D7EEBBBFDAB44727A3FA09F6 /* DeviceManager.swift */,
 				18B9EBFBC9A441A48E22BE19 /* LevelMeter.swift */,
-				0474FED8E94643CFB161F3C1 /* MixerEngine.swift */,
+				0474FED8E94643CFB161F3C1 /* LegacyMixerEngine.swift */,
+				A1B2C3D4E5F60718293A4B02 /* ChannelRingBuffer.swift */,
+				A1B2C3D4E5F60718293A4B04 /* DriftCompensatingReader.swift */,
+				A1B2C3D4E5F60718293A4B06 /* HALAudioUnits.swift */,
+				A1B2C3D4E5F60718293A4B08 /* HALMixerEngine.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -198,7 +210,11 @@
 			files = (
 				B152648A277941A79F057A42 /* DeviceManager.swift in Sources */,
 				3331B45357E8402EA5CB9227 /* LevelMeter.swift in Sources */,
-				9BDFA349C3AC49C2B1FE2A1A /* MixerEngine.swift in Sources */,
+				9BDFA349C3AC49C2B1FE2A1A /* LegacyMixerEngine.swift in Sources */,
+				A1B2C3D4E5F60718293A4B01 /* ChannelRingBuffer.swift in Sources */,
+				A1B2C3D4E5F60718293A4B03 /* DriftCompensatingReader.swift in Sources */,
+				A1B2C3D4E5F60718293A4B05 /* HALAudioUnits.swift in Sources */,
+				A1B2C3D4E5F60718293A4B07 /* HALMixerEngine.swift in Sources */,
 				D4969B645F9042EC87368959 /* AudioMixerApp.swift in Sources */,
 				606ABCB6D34048B79BD313E0 /* AudioChannel.swift in Sources */,
 				64A65E15E1E14C8189302DB3 /* AudioDevice.swift in Sources */,
@@ -277,7 +293,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -348,7 +364,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

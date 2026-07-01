@@ -1,10 +1,14 @@
 import SwiftUI
 
+/// The engine implementation in use. Switch back to `LegacyMixerEngine`
+/// (AVAudioEngine-based) here for A/B comparison during hardware testing.
+typealias ActiveMixerEngine = HALMixerEngine
+
 /// Top-level ViewModel coordinating all strips and the audio engine.
 @Observable
 final class MixerViewModel {
     let deviceManager = DeviceManager()
-    let mixerEngine = MixerEngine()
+    let mixerEngine = ActiveMixerEngine()
 
     var inputStrips: [InputStripViewModel]
     var mainOutput: OutputStripViewModel
@@ -79,7 +83,7 @@ final class MixerViewModel {
         }
 
         let inputs = inputStrips.map { strip in
-            MixerEngine.InputConfig(
+            ActiveMixerEngine.InputConfig(
                 deviceID: strip.selectedDevice.id,
                 leftChannel: strip.leftChannelIndex,
                 rightChannel: strip.rightChannelIndex,
@@ -88,7 +92,7 @@ final class MixerViewModel {
             )
         }
 
-        let output = MixerEngine.OutputConfig(
+        let output = ActiveMixerEngine.OutputConfig(
             deviceID: mainOutput.selectedDevice.id
         )
 

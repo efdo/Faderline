@@ -138,7 +138,7 @@ private final class StereoRingBuffer: @unchecked Sendable {
 /// - AVAudioSourceNode (pull-based) reads from ring buffer on the output engine's render thread.
 /// - An intermediate AVAudioMixerNode handles sample rate conversion when input ≠ output rate.
 @Observable
-final class MixerEngine {
+final class LegacyMixerEngine {
     private var outputEngine = AVAudioEngine()
     private var sharedCaptures: [AudioDeviceID: SharedCapture] = [:]
     private var stripNodes: [Int: StripNodes] = [:]
@@ -266,8 +266,8 @@ final class MixerEngine {
             try setInputDevice(deviceID, on: captureEngine)
 
             // Query actual hardware channel count and sample rate via CoreAudio HAL
-            let hwChannels = MixerEngine.deviceInputChannelCount(deviceID)
-            let inputRate = MixerEngine.deviceSampleRate(deviceID)
+            let hwChannels = LegacyMixerEngine.deviceInputChannelCount(deviceID)
+            let inputRate = LegacyMixerEngine.deviceSampleRate(deviceID)
 
             log("Device \(deviceID): HAL hwChannels=\(hwChannels), HAL rate=\(inputRate) Hz, serving \(strips.count) strip(s)")
 
@@ -409,7 +409,7 @@ final class MixerEngine {
             outputMeterAccum += Int(buffer.frameLength)
             if outputMeterAccum >= outputMeterInterval {
                 outputMeterAccum = 0
-                let levels = MixerEngine.calculateLevels(buffer: buffer)
+                let levels = LegacyMixerEngine.calculateLevels(buffer: buffer)
                 DispatchQueue.main.async {
                     self.outputLevel = levels
                 }
@@ -538,7 +538,7 @@ final class MixerEngine {
     // MARK: - Logging
 
     private func log(_ message: String) {
-        print("[MixerEngine] \(message)")
+        print("[LegacyMixerEngine] \(message)")
     }
 }
 
