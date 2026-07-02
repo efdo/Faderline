@@ -194,19 +194,25 @@ final class HALMixerEngine {
         let state = RenderState(devices: devices, strips: strips)
         self.renderState = state
 
-        // Output unit with the mix handler. The handler captures only `state`
-        // (a final class); all buffers inside are pre-allocated.
-        let outputUnit = try HALOutputUnit(deviceID: output.deviceID,
-                                           maxFrames: Self.maxFrames) { dest, frameCount in
-            HALMixerEngine.mix(state: state, dest: dest, frameCount: frameCount)
-        }
-        self.outputUnit = outputUnit
+        do {
+            // Output unit with the mix handler. The handler captures only `state`
+            // (a final class); all buffers inside are pre-allocated.
+            let outputUnit = try HALOutputUnit(deviceID: output.deviceID,
+                                               maxFrames: Self.maxFrames) { dest, frameCount in
+                HALMixerEngine.mix(state: state, dest: dest, frameCount: frameCount)
+            }
+            self.outputUnit = outputUnit
 
-        // Start inputs first so data is flowing, then the output.
-        for device in devices {
-            try device.inputUnit.start()
+            // Start inputs first so data is flowing, then the output.
+            for device in devices {
+                try device.inputUnit.start()
+            }
+            try outputUnit.start()
+        } catch {
+            // Roll back: stop any units already started before rethrowing.
+            stop()
+            throw error
         }
-        try outputUnit.start()
 
         isRunning = true
         log("✅ Engine running (output rate \(outputRate) Hz)")
