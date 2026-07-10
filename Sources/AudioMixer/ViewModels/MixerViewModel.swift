@@ -1,4 +1,7 @@
 import SwiftUI
+import OSLog
+
+private let logger = Logger(subsystem: "com.audiomixer", category: "MixerViewModel")
 
 /// The engine implementation in use. Switch back to `LegacyMixerEngine`
 /// (AVAudioEngine-based) here for A/B comparison during hardware testing.
@@ -76,10 +79,10 @@ final class MixerViewModel {
     // MARK: - Engine management
 
     private func rebuildEngine() {
-        print("[MixerVM] rebuildEngine called")
-        print("[MixerVM]   output device: id=\(mainOutput.selectedDevice.id), name=\(mainOutput.selectedDevice.name), uid=\(mainOutput.selectedDevice.uid)")
+        logger.debug("rebuildEngine called")
+        logger.debug("  output device: id=\(self.mainOutput.selectedDevice.id, privacy: .public), name=\(self.mainOutput.selectedDevice.name, privacy: .public), uid=\(self.mainOutput.selectedDevice.uid, privacy: .public)")
         for strip in inputStrips {
-            print("[MixerVM]   input[\(strip.id)]: id=\(strip.selectedDevice.id), name=\(strip.selectedDevice.name), routeToMain=\(strip.routeToMain), L=\(strip.leftChannelIndex) R=\(strip.rightChannelIndex)")
+            logger.debug("  input[\(strip.id, privacy: .public)]: id=\(strip.selectedDevice.id, privacy: .public), name=\(strip.selectedDevice.name, privacy: .public), routeToMain=\(strip.routeToMain, privacy: .public), L=\(strip.leftChannelIndex, privacy: .public) R=\(strip.rightChannelIndex, privacy: .public)")
         }
 
         let inputs = inputStrips.map { strip in
@@ -98,9 +101,9 @@ final class MixerViewModel {
 
         do {
             try mixerEngine.start(inputs: inputs, output: output)
-            print("[MixerVM] ✅ Engine started successfully, isRunning=\(mixerEngine.isRunning)")
+            logger.notice("✅ Engine started successfully, isRunning=\(self.mixerEngine.isRunning, privacy: .public)")
         } catch {
-            print("[MixerVM] ❌ MixerEngine failed to start: \(error)")
+            logger.error("❌ MixerEngine failed to start: \(error, privacy: .public)")
             mixerEngine.lastError = error.localizedDescription
         }
 
@@ -129,7 +132,7 @@ final class MixerViewModel {
         // Log diagnostics every 3 seconds to help with debugging.
         Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             guard let self, self.mixerEngine.isRunning else { return }
-            print("[AudioMixer diagnostics]\n\(self.mixerEngine.diagnostics)")
+            logger.info("diagnostics:\n\(self.mixerEngine.diagnostics, privacy: .public)")
         }
     }
 

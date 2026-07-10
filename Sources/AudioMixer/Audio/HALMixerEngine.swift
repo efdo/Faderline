@@ -2,6 +2,9 @@ import Foundation
 import Accelerate
 import CoreAudio
 import Synchronization
+import OSLog
+
+private let logger = Logger(subsystem: "com.audiomixer", category: "HALMixerEngine")
 
 /// AUHAL-based mixer engine (LadioCast-style architecture).
 ///
@@ -305,6 +308,6 @@ final class HALMixerEngine {
     // MARK: - Logging
 
     private func log(_ message: String) {
-        print("[HALMixerEngine] \(message)")
+        logger.debug("\(message, privacy: .public)")
     }
 }
