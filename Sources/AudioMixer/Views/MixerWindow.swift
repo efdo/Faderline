@@ -13,24 +13,26 @@ struct MixerWindow: View {
                         .foregroundStyle(.yellow)
                     Text(error)
                         .font(.caption)
+                        .foregroundStyle(MixerTheme.textPrimary)
                     Spacer()
                     Button("Dismiss") {
                         viewModel.mixerEngine.lastError = nil
                     }
                     .font(.caption)
+                    .foregroundStyle(MixerTheme.textPrimary)
                 }
                 .padding(8)
-                .background(Color.red.opacity(0.3))
+                .background(MixerTheme.errorBannerBg)
             }
 
             // Engine status
             HStack {
                 Circle()
-                    .fill(viewModel.mixerEngine.isRunning ? Color.green : Color.gray)
+                    .fill(viewModel.mixerEngine.isRunning ? MixerTheme.engineRunning : MixerTheme.engineStopped)
                     .frame(width: 8, height: 8)
                 Text(viewModel.mixerEngine.isRunning ? "Engine Running" : "Engine Stopped")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MixerTheme.textSecondary)
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -52,7 +54,7 @@ struct MixerWindow: View {
             }
             .padding(16)
         }
-        .background(Color(nsColor: .init(white: 0.12, alpha: 1.0)))
+        .background(MixerTheme.windowBg)
         .frame(minWidth: 650, minHeight: 400)
     }
 }

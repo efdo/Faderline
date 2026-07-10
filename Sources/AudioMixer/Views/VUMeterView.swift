@@ -12,7 +12,7 @@ struct VUMeterView: View {
             ZStack(alignment: .leading) {
                 // Background track
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color(nsColor: .init(white: 0.08, alpha: 1.0)))
+                    .fill(MixerTheme.meterTrackBg)
 
                 // Active level bar
                 RoundedRectangle(cornerRadius: 2)

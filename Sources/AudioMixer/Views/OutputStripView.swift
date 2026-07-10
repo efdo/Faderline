@@ -10,8 +10,8 @@ struct OutputStripView: View {
             VStack(alignment: .leading, spacing: 8) {
                 // Header
                 Text(strip.label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MixerTheme.textLabel)
 
                 // Device picker
                 Picker("", selection: Binding(
@@ -28,21 +28,21 @@ struct OutputStripView: View {
                 // Level meters
                 HStack(spacing: 4) {
                     Text("L")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(MixerTheme.textMeterLabel)
                         .frame(width: 12)
                     VUMeterView(level: strip.levelLeft)
                 }
                 HStack(spacing: 4) {
                     Text("R")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(MixerTheme.textMeterLabel)
                         .frame(width: 12)
                     VUMeterView(level: strip.levelRight)
                 }
             }
             .padding(8)
         }
-        .backgroundStyle(Color(nsColor: .init(white: 0.16, alpha: 1.0)))
+        .backgroundStyle(MixerTheme.stripBg)
     }
 }

@@ -10,8 +10,8 @@ struct InputStripView: View {
             VStack(alignment: .leading, spacing: 8) {
                 // Header
                 Text(strip.label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MixerTheme.textLabel)
 
                 // Device picker
                 Picker("", selection: Binding(
@@ -42,13 +42,13 @@ struct InputStripView: View {
                 // Level meters
                 HStack(spacing: 4) {
                     Text("L")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(MixerTheme.textMeterLabel)
                         .frame(width: 12)
                     VUMeterView(level: strip.levelLeft)
                     Text("R")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(MixerTheme.textMeterLabel)
                         .frame(width: 12)
                     VUMeterView(level: strip.levelRight)
                 }
@@ -64,11 +64,11 @@ struct InputStripView: View {
                     )
                     Button(action: { viewModel.toggleBoost(forStrip: strip) }) {
                         Text("+6dB")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 10, weight: .semibold))
                             .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(strip.boostEnabled ? Color.orange : Color.gray.opacity(0.3))
-                            .foregroundStyle(.white)
+                            .padding(.vertical, 3)
+                            .background(strip.boostEnabled ? MixerTheme.boostActive : MixerTheme.boostInactive)
+                            .foregroundStyle(MixerTheme.routeFg)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
                     .buttonStyle(.plain)
@@ -80,20 +80,14 @@ struct InputStripView: View {
                         viewModel.toggleRouteToMain(forStrip: strip)
                     }
                     // Placeholders for future Aux outputs
-                    routeButton(label: "Aux 1", active: false, action: {})
-                        .disabled(true)
-                        .opacity(0.4)
-                    routeButton(label: "Aux 2", active: false, action: {})
-                        .disabled(true)
-                        .opacity(0.4)
-                    routeButton(label: "Aux 3", active: false, action: {})
-                        .disabled(true)
-                        .opacity(0.4)
+                    auxButton(label: "Aux 1")
+                    auxButton(label: "Aux 2")
+                    auxButton(label: "Aux 3")
                 }
             }
             .padding(8)
         }
-        .backgroundStyle(Color(nsColor: .init(white: 0.16, alpha: 1.0)))
+        .backgroundStyle(MixerTheme.stripBg)
     }
 
     // MARK: - Subviews
@@ -102,7 +96,7 @@ struct InputStripView: View {
         HStack(spacing: 4) {
             Text(label)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MixerTheme.textLabel)
             Picker("", selection: selection) {
                 ForEach(strip.availableChannels) { ch in
                     Text(ch.label).tag(ch.index)
@@ -116,13 +110,24 @@ struct InputStripView: View {
     private func routeButton(label: String, active: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 10, weight: .semibold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(active ? Color.red.opacity(0.8) : Color.gray.opacity(0.3))
-                .foregroundStyle(.white)
+                .background(active ? MixerTheme.routeActiveMain : MixerTheme.routeInactive)
+                .foregroundStyle(MixerTheme.routeFg)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain)
     }
+
+    private func auxButton(label: String) -> some View {
+        Text(label)
+            .font(.system(size: 10, weight: .medium))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(MixerTheme.routeInactive.opacity(0.5))
+            .foregroundStyle(MixerTheme.routeDisabledFg)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
 }
+
