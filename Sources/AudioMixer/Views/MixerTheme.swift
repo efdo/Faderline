@@ -1,42 +1,41 @@
 import SwiftUI
 
 /// Central color palette for the AudioMixer UI.
-/// All values are calibrated for legibility on macOS dark-mode displays.
+/// Uses NSColor semantic system colors so all backgrounds and text adapt
+/// automatically to light and dark mode.
 enum MixerTheme {
-    // MARK: - Backgrounds
-    /// Main window background: deep charcoal
-    static let windowBg = Color(white: 0.10)
-    /// Strip panel background: slightly raised from window
-    static let stripBg = Color(white: 0.17)
-    /// VU meter track background
-    static let meterTrackBg = Color(white: 0.09)
+    // MARK: - Backgrounds (system-adaptive)
+    /// Main window background — follows system appearance
+    static let windowBg     = Color(NSColor.windowBackgroundColor)
+    /// Strip panel background — slightly raised surface
+    static let stripBg      = Color(NSColor.controlBackgroundColor)
+    /// VU meter track — visible in both appearances
+    static let meterTrackBg = Color(NSColor.separatorColor)
 
-    // MARK: - Text
-    /// Primary readable text (device names, values)
-    static let textPrimary = Color(white: 0.88)
-    /// Section / strip header labels
-    static let textLabel = Color(white: 0.56)
-    /// Meter channel labels (L / R)
-    static let textMeterLabel = Color(white: 0.50)
-    /// Status / secondary info
-    static let textSecondary = Color(white: 0.46)
+    // MARK: - Text (system-adaptive)
+    static let textPrimary    = Color(NSColor.labelColor)
+    static let textLabel      = Color(NSColor.secondaryLabelColor)
+    static let textMeterLabel = Color(NSColor.tertiaryLabelColor)
+    static let textSecondary  = Color(NSColor.tertiaryLabelColor)
 
     // MARK: - Route buttons
-    /// Active "Main" routing — green (routed = good)
-    static let routeActiveMain = Color(red: 0.20, green: 0.62, blue: 0.29)
-    /// Inactive / disabled route button background
-    static let routeInactive = Color(white: 0.24)
-    /// Foreground on both active and inactive route buttons
-    static let routeFg = Color(white: 0.90)
-    /// Disabled aux button foreground
-    static let routeDisabledFg = Color(white: 0.38)
+    /// Active "Main" routing — green, legible in both appearances
+    static let routeActiveMain = Color(red: 0.18, green: 0.60, blue: 0.27)
+    /// Inactive route button fill — system control surface
+    static let routeInactive   = Color(NSColor.controlColor)
+    /// Foreground on active (colored-background) buttons
+    static let routeActiveFg   = Color.white
+    /// Foreground on inactive (system-surface) buttons
+    static let routeInactiveFg = Color(NSColor.controlTextColor)
+    /// Disabled aux placeholder foreground
+    static let routeDisabledFg = Color(NSColor.disabledControlTextColor)
 
     // MARK: - +6 dB boost button
-    static let boostActive = Color(red: 0.85, green: 0.47, blue: 0.10)   // amber
-    static let boostInactive = Color(white: 0.24)
+    static let boostActive   = Color(red: 0.85, green: 0.47, blue: 0.10)  // amber
+    static let boostInactive = Color(NSColor.controlColor)
 
-    // MARK: - Engine status
+    // MARK: - Engine status / alerts
     static let engineRunning = Color(red: 0.22, green: 0.80, blue: 0.35)
-    static let engineStopped = Color(white: 0.32)
-    static let errorBannerBg = Color(red: 0.50, green: 0.08, blue: 0.08)
+    static let engineStopped = Color(NSColor.disabledControlTextColor)
+    static let errorBannerBg = Color(red: 0.55, green: 0.08, blue: 0.08)
 }

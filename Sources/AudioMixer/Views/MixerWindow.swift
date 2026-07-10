@@ -13,13 +13,13 @@ struct MixerWindow: View {
                         .foregroundStyle(.yellow)
                     Text(error)
                         .font(.caption)
-                        .foregroundStyle(MixerTheme.textPrimary)
+                        .foregroundStyle(.white)
                     Spacer()
                     Button("Dismiss") {
                         viewModel.mixerEngine.lastError = nil
                     }
                     .font(.caption)
-                    .foregroundStyle(MixerTheme.textPrimary)
+                    .foregroundStyle(.white)
                 }
                 .padding(8)
                 .background(MixerTheme.errorBannerBg)

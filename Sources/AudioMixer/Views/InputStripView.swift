@@ -68,7 +68,7 @@ struct InputStripView: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
                             .background(strip.boostEnabled ? MixerTheme.boostActive : MixerTheme.boostInactive)
-                            .foregroundStyle(MixerTheme.routeFg)
+                            .foregroundStyle(strip.boostEnabled ? MixerTheme.routeActiveFg : MixerTheme.routeInactiveFg)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
                     .buttonStyle(.plain)
@@ -114,7 +114,7 @@ struct InputStripView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(active ? MixerTheme.routeActiveMain : MixerTheme.routeInactive)
-                .foregroundStyle(MixerTheme.routeFg)
+                .foregroundStyle(active ? MixerTheme.routeActiveFg : MixerTheme.routeInactiveFg)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain)
