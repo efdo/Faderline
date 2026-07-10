@@ -1,72 +1,84 @@
 # AudioMixer
 
-A native ARM64 macOS audio mixer app — a modern replacement for the core functionality of LadioCast.
+A native ARM64 macOS audio mixer — a modern replacement for [LadioCast](https://apps.apple.com/us/app/ladiocast/id411213048), which is Intel-only and will break when Rosetta 2 is removed.
 
 ## Features
 
 - **2 input channels** (expandable by design) — select any audio input device and specific L/R channels
 - **1 main output** (expandable by design) — route mixed audio to any output device
-- **Per-input volume control** with +6 dB boost toggle
+- **Per-input volume** with +6 dB boost toggle
 - **Real-time VU meters** on inputs and output
-- **Device hot-plug** — automatically detects when devices are connected/disconnected
-- **Persistent configuration** — remembers your device selections and volumes across launches
-- **Dark mixer UI** matching the LadioCast aesthetic
+- **Device hot-plug** — automatically detects connect/disconnect
+- **Persistent configuration** — remembers device selections and volumes across launches
+- **Drift-compensated resampling** — handles 44.1 ↔ 48 kHz conversion and long-run clock drift without clicks
 
 ## Requirements
 
-- macOS 14.0 (Sonoma) or later
+- macOS 15.0 (Sequoia) or later
 - Apple Silicon (ARM64)
+- Microphone permission (prompted on first launch)
 
 ## Building
 
-### With Swift Package Manager (Command Line)
+### Swift Package Manager
 
 ```bash
-cd AudioMixer
 swift build
 swift run AudioMixer
 ```
 
-### With Xcode
+### Xcode
 
-Open `AudioMixer/AudioMixer.xcodeproj` in Xcode, select the AudioMixer scheme, and build/run (⌘R).
+Open `AudioMixer.xcodeproj`, select the AudioMixer scheme, press ⌘R.
 
-> **Note:** The Xcode project requires full Xcode (not just Command Line Tools).
+> Full Xcode required (not just Command Line Tools).
 
 ## Architecture
 
 ```
 Sources/AudioMixer/
-├── AudioMixerApp.swift          # SwiftUI app entry point
-├── Models/                      # Data models
-│   ├── AudioDevice.swift        # CoreAudio device wrapper
-│   ├── AudioChannel.swift       # Channel descriptor
-│   └── MixerConfiguration.swift # Persisted settings (Codable)
-├── Audio/                       # Audio engine layer
-│   ├── DeviceManager.swift      # CoreAudio HAL device enumeration + hot-plug
-│   ├── MixerEngine.swift        # AVAudioEngine mixing graph
-│   └── LevelMeter.swift         # Audio level tap helper
-├── ViewModels/                  # MVVM view models (@Observable)
-│   ├── MixerViewModel.swift     # Top-level coordinator
-│   ├── InputStripViewModel.swift
-│   └── OutputStripViewModel.swift
-└── Views/                       # SwiftUI views
-    ├── MixerWindow.swift        # Main 2-column layout
-    ├── InputStripView.swift     # Input strip with all controls
-    ├── OutputStripView.swift    # Output strip with meters
-    └── VUMeterView.swift        # Animated level bar
+├── AudioMixerApp.swift            # App entry + microphone permission request
+├── Models/                        # Data models (Codable persistence)
+├── Audio/
+│   ├── ChannelRingBuffer.swift    # Lock-free SPSC ring buffer (atomics, real-time safe)
+│   ├── DriftCompensatingReader.swift  # Servo-tuned resampler (handles clock drift)
+│   ├── HALAudioUnits.swift        # Raw AUHAL input/output unit wrappers
+│   ├── HALMixerEngine.swift       # Active mixing engine (LadioCast-style AUHAL path)
+│   └── DeviceManager.swift        # CoreAudio HAL device enumeration + hot-plug
+├── ViewModels/                    # MVVM (@Observable)
+└── Views/                         # SwiftUI — all colors in MixerTheme.swift
 ```
+
+### Signal path
+
+```
+Input device (e.g. SSL 2)
+  → AUHAL input unit (explicit render callback)
+  → ChannelRingBuffer (lock-free, all hardware channels)
+  → DriftCompensatingReader (linear-interp resampler, servo-tuned ratio)
+  → vDSP mix (channel map → volume → accumulate)
+  → AUHAL output unit
+  → Output device (BlackHole / speakers)
+```
+
+This replaces an earlier AVAudioEngine approach that produced crackling due to independent clock domains. The AUHAL engine mirrors the architecture of LadioCast (AUGraph + circular buffers + explicit render callbacks).
 
 ## Technology
 
 | Layer | Technology |
-|-------|-----------|
-| UI | SwiftUI (macOS 14+) |
-| Audio mixing | AVAudioEngine + AVAudioMixerNode |
+|---|---|
+| UI | SwiftUI (macOS 15+) |
+| Audio engine | CoreAudio AUHAL (raw AudioUnit, no AVAudioEngine) |
 | Device enumeration | CoreAudio HAL (AudioObjectGetPropertyData) |
+| Mixing | vDSP (Accelerate framework) |
 | Architecture | MVVM with @Observable |
-| Persistence | UserDefaults + Codable |
+| Persistence | UserDefaults + Codable JSON |
+
+## For AI agents
+
+See [`agents.md`](agents.md) for architecture details, real-time safety rules, Xcode project maintenance, and the debug/diagnostic workflow.
 
 ## License
 
 MIT
+
