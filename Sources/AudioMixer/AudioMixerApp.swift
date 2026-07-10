@@ -20,6 +20,14 @@ struct AudioMixerApp: App {
                     Text("AudioMixer needs microphone access to capture audio. Enable it in System Settings → Privacy & Security → Microphone.")
                 }
                 .task { await requestMicrophonePermission() }
+                // Ensure AUHAL units are properly disposed on termination so
+                // coreaudiod releases IOProc registrations for the SSL 2 (or any
+                // other device). Without this, `kill`ing the process leaves
+                // orphaned HAL state that blocks the next launch.
+                .onReceive(NotificationCenter.default.publisher(
+                    for: NSApplication.willTerminateNotification)) { _ in
+                    mixerViewModel.stopEngine()
+                }
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 700, height: 500)

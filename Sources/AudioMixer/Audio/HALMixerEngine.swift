@@ -130,14 +130,20 @@ final class HALMixerEngine {
                 state.outLevelR.load(ordering: .relaxed))
     }
 
-    /// Diagnostics: total ring under/overruns + starved resampler pulls.
+    /// Diagnostics: total ring under/overruns + starved resampler pulls + current levels.
     var diagnostics: String {
         guard let state = renderState else { return "engine stopped" }
-        return state.devices.enumerated().map { i, dev in
+        let deviceLines = state.devices.enumerated().map { i, dev in
             "dev\(i): callbacks=\(dev.inputUnit.inputCallbackCount) fill=\(dev.reader.fillLevel) ratio=\(String(format: "%.6f", dev.reader.currentRatio)) " +
             "underruns=\(dev.inputUnit.ring.underrunCount) overruns=\(dev.inputUnit.ring.overrunCount) " +
             "starved=\(dev.reader.starvedPullCount)"
         }.joined(separator: "\n")
+        let levelLines = state.strips.map { strip in
+            "strip[\(strip.stripIndex)]: L=\(String(format: "%.3f", strip.levelL.load(ordering: .relaxed))) R=\(String(format: "%.3f", strip.levelR.load(ordering: .relaxed)))"
+        }.joined(separator: "\n")
+        let outL = state.outLevelL.load(ordering: .relaxed)
+        let outR = state.outLevelR.load(ordering: .relaxed)
+        return deviceLines + "\n" + levelLines + "\nout: L=\(String(format: "%.3f", outL)) R=\(String(format: "%.3f", outR))"
     }
 
     // MARK: - Lifecycle
@@ -308,6 +314,6 @@ final class HALMixerEngine {
     // MARK: - Logging
 
     private func log(_ message: String) {
-        logger.debug("\(message, privacy: .public)")
+        logger.info("\(message, privacy: .public)")
     }
 }

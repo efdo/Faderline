@@ -27,11 +27,24 @@ final class MixerViewModel {
 
         loadConfiguration()
         startLevelPolling()
-        rebuildEngine()
+        // Defer engine start to the next main-run-loop cycle so the run loop
+        // is already live when AudioComponentInstanceNew's Mach IPC response
+        // needs to be dispatched back to the main thread. Calling this during
+        // App.init() would cause a deadlock (response can never be delivered).
+        DispatchQueue.main.async { [weak self] in self?.rebuildEngine() }
     }
 
     deinit {
         levelTimer?.invalidate()
+        mixerEngine.stop()
+    }
+
+    /// Call on app termination (willTerminateNotification) so coreaudiod
+    /// receives proper IOProc-dispose notifications before the process exits.
+    /// Without this, killed instances leave orphaned HAL state in coreaudiod
+    /// that blocks IOProc registration for the next launch.
+    func stopEngine() {
+        mixerEngine.stop()
     }
 
     // MARK: - Actions
@@ -79,10 +92,12 @@ final class MixerViewModel {
     // MARK: - Engine management
 
     private func rebuildEngine() {
-        logger.debug("rebuildEngine called")
-        logger.debug("  output device: id=\(self.mainOutput.selectedDevice.id, privacy: .public), name=\(self.mainOutput.selectedDevice.name, privacy: .public), uid=\(self.mainOutput.selectedDevice.uid, privacy: .public)")
+        // Snapshot config values on the calling (main) thread before touching
+        // the audio engine, so the background start closure captures plain
+        // value types and avoids accessing @Observable properties off-thread.
+        logger.info("rebuildEngine: output=\(self.mainOutput.selectedDevice.name, privacy: .public) (\(self.mainOutput.selectedDevice.id, privacy: .public))")
         for strip in inputStrips {
-            logger.debug("  input[\(strip.id, privacy: .public)]: id=\(strip.selectedDevice.id, privacy: .public), name=\(strip.selectedDevice.name, privacy: .public), routeToMain=\(strip.routeToMain, privacy: .public), L=\(strip.leftChannelIndex, privacy: .public) R=\(strip.rightChannelIndex, privacy: .public)")
+            logger.info("rebuildEngine: input[\(strip.id, privacy: .public)] '\(strip.selectedDevice.name, privacy: .public)' id=\(strip.selectedDevice.id, privacy: .public) L=ch\(strip.leftChannelIndex, privacy: .public) R=ch\(strip.rightChannelIndex, privacy: .public) route=\(strip.routeToMain, privacy: .public)")
         }
 
         let inputs = inputStrips.map { strip in
@@ -94,20 +109,31 @@ final class MixerViewModel {
                 routeToMain: strip.routeToMain
             )
         }
+        let output = ActiveMixerEngine.OutputConfig(deviceID: mainOutput.selectedDevice.id)
 
-        let output = ActiveMixerEngine.OutputConfig(
-            deviceID: mainOutput.selectedDevice.id
-        )
-
-        do {
-            try mixerEngine.start(inputs: inputs, output: output)
-            logger.notice("✅ Engine started successfully, isRunning=\(self.mixerEngine.isRunning, privacy: .public)")
-        } catch {
-            logger.error("❌ MixerEngine failed to start: \(error, privacy: .public)")
-            mixerEngine.lastError = error.localizedDescription
+        // `AudioComponentInstanceNew` (called deep inside `start()`) makes a
+        // synchronous Mach IPC call to coreaudiod whose reply is dispatched on
+        // the main thread. Calling it on the main thread therefore deadlocks.
+        // Run `start()` on a background thread so the main run loop stays free
+        // to receive and dispatch coreaudiod's reply.
+        let engine = mixerEngine
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                try engine.start(inputs: inputs, output: output)
+                let isRunning = engine.isRunning
+                await MainActor.run {
+                    logger.notice("✅ Engine started successfully, isRunning=\(isRunning, privacy: .public)")
+                    self?.saveConfiguration()
+                }
+            } catch {
+                let desc = error.localizedDescription
+                await MainActor.run {
+                    logger.error("❌ MixerEngine failed to start: \(error, privacy: .public)")
+                    engine.lastError = desc
+                    self?.saveConfiguration()
+                }
+            }
         }
-
-        saveConfiguration()
     }
 
     // MARK: - Level metering

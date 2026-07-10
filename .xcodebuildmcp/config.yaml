@@ -1,0 +1,15 @@
+schemaVersion: 1
+enabledWorkflows:
+  - debugging
+  - doctor
+  - macos
+  - project-discovery
+  - xcode-ide
+debug: true
+sentryDisabled: true
+setupPreferences:
+  platforms:
+    - macOS
+sessionDefaults:
+  projectPath: AudioMixer.xcodeproj
+  scheme: AudioMixer

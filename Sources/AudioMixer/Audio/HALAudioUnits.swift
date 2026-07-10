@@ -2,6 +2,9 @@ import Foundation
 import AudioToolbox
 import CoreAudio
 import Synchronization
+import OSLog
+
+private let halLogger = Logger(subsystem: "com.audiomixer", category: "HALAudioUnits")
 
 /// Errors from the AUHAL layer.
 enum HALUnitError: Error, LocalizedError {
@@ -128,6 +131,7 @@ final class HALInputUnit {
 
         let channels = HALDeviceInfo.channelCount(deviceID: deviceID, scope: kAudioDevicePropertyScopeInput)
         let rate = HALDeviceInfo.nominalSampleRate(deviceID: deviceID)
+        halLogger.info("HALInputUnit init: device=\(deviceID, privacy: .public) channels=\(channels, privacy: .public) rate=\(rate, privacy: .public)")
         guard channels > 0 else { throw HALUnitError.osStatus("Device \(deviceID) has no input channels", -1) }
         guard rate > 0 else { throw HALUnitError.osStatus("Device \(deviceID) sample rate query", -1) }
         self.channelCount = channels
@@ -148,6 +152,7 @@ final class HALInputUnit {
         try check(AudioComponentInstanceNew(component, &unit), "AudioComponentInstanceNew")
         guard let au = unit else { throw HALUnitError.osStatus("AudioComponentInstanceNew", -1) }
         self.audioUnit = au
+        halLogger.info("HALInputUnit: AU instance created, enabling IO")
 
         // 1. Enable input (element 1), disable output (element 0).
         var enable: UInt32 = 1
@@ -156,12 +161,14 @@ final class HALInputUnit {
         var disable: UInt32 = 0
         try check(AudioUnitSetProperty(au, kAudioOutputUnitProperty_EnableIO,
                                        kAudioUnitScope_Output, 0, &disable, 4), "DisableIO output")
+        halLogger.info("HALInputUnit: IO enabled, binding device \(deviceID, privacy: .public)")
 
         // 2. Bind device.
         var dev = deviceID
         try check(AudioUnitSetProperty(au, kAudioOutputUnitProperty_CurrentDevice,
                                        kAudioUnitScope_Global, 0, &dev, UInt32(MemoryLayout<AudioDeviceID>.size)),
                   "Set current device")
+        halLogger.info("HALInputUnit: device bound, setting stream format \(channels, privacy: .public)ch @ \(rate, privacy: .public)Hz")
 
         // 3. Client format on output scope of element 1 (what WE receive):
         //    planar Float32 at the device's native rate & channel count.
@@ -171,11 +178,13 @@ final class HALInputUnit {
                                        kAudioUnitScope_Output, 1, &fmt,
                                        UInt32(MemoryLayout<AudioStreamBasicDescription>.size)),
                   "Set input client format")
+        halLogger.info("HALInputUnit: stream format set, setting max frames")
 
         // 4. Max frames per slice.
         var maxSlice = UInt32(maxFrames)
         try check(AudioUnitSetProperty(au, kAudioUnitProperty_MaximumFramesPerSlice,
                                        kAudioUnitScope_Global, 0, &maxSlice, 4), "Set max frames")
+        halLogger.info("HALInputUnit: max frames set, setting input callback")
 
         // 5. Input callback.
         let ctx = InputContext(ring: ring, channelCount: channels, maxFrames: maxFrames)
@@ -189,8 +198,10 @@ final class HALInputUnit {
                                        kAudioUnitScope_Global, 0, &callback,
                                        UInt32(MemoryLayout<AURenderCallbackStruct>.size)),
                   "Set input callback")
+        halLogger.info("HALInputUnit: callback set, calling AudioUnitInitialize")
 
         try check(AudioUnitInitialize(au), "AudioUnitInitialize(input)")
+        halLogger.info("HALInputUnit: ✅ initialized successfully")
     }
 
     func start() throws {
