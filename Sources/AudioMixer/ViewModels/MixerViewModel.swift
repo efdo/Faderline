@@ -125,6 +125,12 @@ final class MixerViewModel {
             self.mainOutput.levelLeft = self.mixerEngine.outputLevel.left
             self.mainOutput.levelRight = self.mixerEngine.outputLevel.right
         }
+
+        // Log diagnostics every 3 seconds to help with debugging.
+        Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            guard let self, self.mixerEngine.isRunning else { return }
+            print("[AudioMixer diagnostics]\n\(self.mixerEngine.diagnostics)")
+        }
     }
 
     // MARK: - Persistence

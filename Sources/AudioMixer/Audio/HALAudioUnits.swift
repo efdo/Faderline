@@ -1,6 +1,7 @@
 import Foundation
 import AudioToolbox
 import CoreAudio
+import Synchronization
 
 /// Errors from the AUHAL layer.
 enum HALUnitError: Error, LocalizedError {
@@ -82,6 +83,8 @@ final class HALInputUnit {
     private var audioUnit: AudioUnit?
     private var context: InputContext?
 
+    var inputCallbackCount: Int { context?.callbackCount.load(ordering: .relaxed) ?? 0 }
+
     /// Real-time context handed to the C callback via inRefCon.
     /// Owns the render ABL and pointer table — allocated once, never resized.
     final class InputContext {
@@ -91,6 +94,7 @@ final class HALInputUnit {
         let maxFrames: Int
         let bufferList: UnsafeMutableAudioBufferListPointer
         let channelPointers: UnsafeMutablePointer<UnsafePointer<Float>>
+        let callbackCount = Atomic<Int>(0)
 
         init(ring: ChannelRingBuffer, channelCount: Int, maxFrames: Int) {
             self.ring = ring
@@ -231,7 +235,16 @@ private func halInputCallback(
                                  ctx.bufferList.unsafeMutablePointer)
     guard status == noErr else { return status }
 
+    // Refresh channel pointer table from post-render mData: AUHAL may have
+    // swapped mData to point to its own internal buffers for efficiency.
+    for c in 0..<ctx.channelCount {
+        if let data = ctx.bufferList[c].mData {
+            ctx.channelPointers[c] = UnsafePointer(data.assumingMemoryBound(to: Float.self))
+        }
+    }
+
     ctx.ring.write(channelPointers: UnsafePointer(ctx.channelPointers), count: frames)
+    ctx.callbackCount.wrappingAdd(1, ordering: .relaxed)
     return noErr
 }
 

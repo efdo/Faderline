@@ -131,7 +131,7 @@ final class HALMixerEngine {
     var diagnostics: String {
         guard let state = renderState else { return "engine stopped" }
         return state.devices.enumerated().map { i, dev in
-            "dev\(i): fill=\(dev.reader.fillLevel) ratio=\(String(format: "%.6f", dev.reader.currentRatio)) " +
+            "dev\(i): callbacks=\(dev.inputUnit.inputCallbackCount) fill=\(dev.reader.fillLevel) ratio=\(String(format: "%.6f", dev.reader.currentRatio)) " +
             "underruns=\(dev.inputUnit.ring.underrunCount) overruns=\(dev.inputUnit.ring.overrunCount) " +
             "starved=\(dev.reader.starvedPullCount)"
         }.joined(separator: "\n")
