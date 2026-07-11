@@ -20,9 +20,9 @@ struct VUMeterView: View {
                     .frame(width: geometry.size.width * displayLevel)
             }
         }
-        .frame(height: 6)
+        .frame(height: 10)
         .onChange(of: level) { _, newValue in
-            withAnimation(.linear(duration: 0.05)) {
+            withAnimation(.linear(duration: 0.1)) {
                 displayLevel = CGFloat(newValue)
             }
         }
@@ -30,7 +30,7 @@ struct VUMeterView: View {
 
     private var levelGradient: LinearGradient {
         LinearGradient(
-            colors: [.green, .green, .yellow, .red],
+            colors: [.green, .yellow, .red],
             startPoint: .leading,
             endPoint: .trailing
         )
