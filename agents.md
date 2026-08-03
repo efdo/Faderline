@@ -181,3 +181,97 @@ Before removing `LegacyMixerEngine`:
 - **Hardware validation** (blocked: requires user at machine — see protocol above)
 - After validation: delete `LegacyMixerEngine.swift` and `LevelMeter.swift`
 - Optional future work: hot-unplug graceful recovery, sample-rate-change listener, Aux outputs
+
+---
+
+## Known gotchas (hard-won — read before touching the engine)
+
+### 1. Never SIGKILL AudioMixer while the engine is running
+
+Using `kill -9 <pid>` or `pkill -9 AudioMixer` skips Swift's `deinit` and
+AppKit's `applicationWillTerminate`. CoreAudio's HAL (`coreaudiod`) never
+receives `AudioComponentInstanceDispose` / `AudioOutputUnitStop` for our
+AUHAL units, so it accumulates **orphaned IOProc registrations** for the SSL 2
+(or any other USB device).
+
+On the next launch, `AudioComponentInstanceNew` tries to register a new IOProc
+for the same device. CoreaudioD accepts the Mach IPC message but **never
+replies** — the calling thread blocks forever on `mach_msg2_trap`.
+
+**Fix already in place:** `AudioMixerApp` listens for
+`NSApplication.willTerminateNotification` and calls `MixerViewModel.stopEngine()`
+before exit. AppKit routes `SIGTERM` (the default `kill <pid>`) through
+`applicationWillTerminate`, so a normal kill is safe.
+
+**If you see the engine hang on launch:** coreaudiod has orphaned state. Run:
+```bash
+sudo launchctl stop com.apple.audio.coreaudiod
+```
+Wait ~3 s for coreaudiod to restart, then relaunch the app.
+
+---
+
+### 2. Engine start must NOT run on the main thread
+
+`AudioComponentInstanceNew` (inside `HALInputUnit.init`) makes a synchronous
+Mach IPC call to coreaudiod. CoreaudioD's reply must be dispatched on the **main
+run loop**. If `start()` is called from the main thread (e.g. directly in
+`AudioMixerApp.init` → `MixerViewModel.init`), the main run loop is busy and
+the reply can never be delivered → infinite deadlock.
+
+**Fix already in place:** `MixerViewModel.rebuildEngine()` runs
+`engine.start()` inside `Task.detached(priority: .userInitiated)` so the main
+thread stays free to pump coreaudiod's reply.
+
+**Do not move `start()` back to the main thread.** The `DispatchQueue.main.async`
+wrapper in `init` only defers to the next run-loop cycle — it still runs on the
+main thread and will deadlock if coreaudiod is slow.
+
+---
+
+### 3. SSL 2 is simultaneously the system default output device and our capture input
+
+The SSL 2 (device ID 206 at time of writing) is typically set as macOS's
+**default output device** by the user for headphone monitoring. Our AUHAL input
+unit also captures from it.
+
+This means coreaudiod has to manage the device in two HAL contexts at once.
+Consequences:
+- HAL lock contention is higher than with a capture-only device.
+- The 'nope' error (`0x6E6F7065 / 1852797029`) may appear in the system log
+  from HAL proxy operations — this is **non-fatal** and comes from the system's
+  output path, not our code.
+- When running diagnostics, `HALC_ShellObject::SetPropertyData failed` messages
+  are expected noise; focus on our subsystem logs (`subsystem == "com.audiomixer"`).
+
+---
+
+### 4. Diagnostics are `.info` level — use `--info` flag with `log show`
+
+All runtime log messages use `logger.info(...)` or higher. The `log show`
+default only shows `.default` and above, which omits `.info`. Always use:
+
+```bash
+log show --predicate 'subsystem == "com.audiomixer"' --info --last 30s
+```
+
+Or for live streaming while the app is open:
+```bash
+log stream --predicate 'subsystem == "com.audiomixer"' --level info
+```
+
+Without `--info`, you will see **zero log lines** and assume the engine is silent.
+
+---
+
+### 5. Both VU meter and level polling work; bars may appear frozen at first
+
+The VU meter applies a **3× sensitivity multiplier** in `VUMeterView` before
+display. Raw RMS levels from a quiet room / noise floor are typically `0.001–0.01`
+(−60 to −40 dBFS), which after ×3 still look near-zero. The bars should move
+visibly when speaking into or playing audio through the SSL 2.
+
+If bars show 0 after engine start, check the diagnostics log first:
+- `callbacks=0` → AUHAL input callback is not firing (microphone permission denied, or wrong device selected)
+- `callbacks>0, fill≈2048, underruns=0` → engine is healthy; signal may genuinely be silent
+- `starved>0` → resampler underrun; ring buffer not filling fast enough
