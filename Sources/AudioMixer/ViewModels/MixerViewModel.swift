@@ -147,8 +147,8 @@ final class MixerViewModel {
                     strip.levelLeft = levels.left
                     strip.levelRight = levels.right
                 } else {
-                    strip.levelLeft *= 0.8
-                    strip.levelRight *= 0.8
+                    strip.levelLeft *= 0.9
+                    strip.levelRight *= 0.9
                 }
             }
             self.mainOutput.levelLeft = self.mixerEngine.outputLevel.left
