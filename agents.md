@@ -6,7 +6,7 @@ This document is the first thing an AI agent should read before making changes t
 
 ## What this project is
 
-A native ARM64 macOS audio mixer (LadioCast replacement) built with Swift/SwiftUI. Core use case: SSL 2 USB audio interface (stereo input, 2 channels) → mix → BlackHole 2ch or MacBook speakers.
+A native ARM64 macOS audio mixer (LadioCast replacement) built with Swift/SwiftUI. Core use case: SSL 2 USB audio interface (stereo input, 2 channels) → mix → its own **AudioMixer Virtual Microphone** (for Teams/Zoom/any conferencing app) and/or MacBook speakers/BlackHole for local monitoring.
 
 - **Not** a streaming app. No Icecast/SHOUTcast.
 - **Not** sandboxed — no App Store target.
@@ -28,9 +28,14 @@ swift test
 
 # Full Xcode build (needed to check pbxproj consistency)
 xcodebuild -project AudioMixer.xcodeproj -scheme AudioMixer -configuration Debug build
+
+# Virtual mic driver + its CFPlugIn-loaded property/IO tests (Xcode-only,
+# not part of Package.swift — see "Virtual microphone" section below)
+xcodebuild -project AudioMixer.xcodeproj -target AudioMixerVirtualDriverTests -configuration Debug build
+./build/Debug/AudioMixerVirtualDriverTests ./build/Debug/AudioMixerVirtualDriver.driver
 ```
 
-**Always run all three verification steps after any non-trivial change.** The Xcode project and SPM package are both maintained; they must both build.
+**Always run all of these after any non-trivial change.** The Xcode project and SPM package are both maintained; they must both build. The driver test run doesn't install anything system-wide, so it's safe to run anytime.
 
 ---
 
@@ -50,6 +55,7 @@ Sources/AudioMixer/
 │   ├── HALMixerEngine.swift       # ★ Active engine — AUHAL-based, LadioCast-style
 │   ├── LegacyMixerEngine.swift    # AVAudioEngine-based engine (kept for A/B, do NOT delete yet)
 │   ├── DeviceManager.swift        # CoreAudio HAL device enumeration + hot-plug
+│   ├── VirtualDriverManager.swift # Install/update/remove lifecycle for the virtual mic driver
 │   └── LevelMeter.swift           # Unused tap helper (legacy, safe to ignore)
 ├── ViewModels/
 │   ├── MixerViewModel.swift       # Top-level coordinator; owns engine + device manager
@@ -59,13 +65,88 @@ Sources/AudioMixer/
     ├── MixerTheme.swift           # Central color palette — change colors here only
     ├── MixerWindow.swift          # Main 2-column layout + error banner + engine status
     ├── InputStripView.swift       # Device picker, channel selectors, volume, routing
-    ├── OutputStripView.swift      # Device picker + L/R level meters
+    ├── OutputStripView.swift      # Monitor device picker, monitoring toggle, L/R meters
+    ├── VirtualMicPanelView.swift  # Virtual mic driver state + install/remove + meters
     └── VUMeterView.swift          # Animated horizontal level bar
 
+Driver/                            # Xcode-only targets; not part of Package.swift
+├── AudioMixerVirtualDriver.c       # AudioServerPlugIn HAL bundle — the virtual microphone
+├── Info.plist                     # CFPlugIn factory/type declarations for the driver
+├── AudioMixerVirtualDriverTests/main.c  # CFPlugIn-loaded property/IO smoke tests
+└── Packaging/
+    ├── build_installer_pkgs.sh    # Builds install/uninstall .pkg (see below)
+    ├── scripts_install/postinstall
+    └── scripts_uninstall/postinstall
+
 Tests/
-├── AudioMixerTests/AudioMixerTests.swift      # 15 standalone tests (run via swift script)
-└── AudioMixerEngineTests/EngineTests.swift    # 13 XCTest tests for ring buffer + resampler
+├── AudioMixerTests/AudioMixerTests.swift      # 17 standalone tests (run via swift script)
+└── AudioMixerEngineTests/EngineTests.swift    # 21 XCTest tests for ring buffer + resampler + engine routing + config migration
 ```
+
+---
+
+## Virtual microphone (AudioMixerVirtualDriver)
+
+AudioMixer can feed its mixed bus directly into Teams, Zoom, or any other
+Core Audio client as a microphone — no BlackHole or other third-party
+loopback driver required. This works via a clean-room `AudioServerPlugIn`
+HAL plug-in, `AudioMixerVirtualDriver.driver`, implemented directly against
+Apple's public `<CoreAudio/AudioServerPlugIn.h>` interface (see
+`Driver/AudioMixerVirtualDriver.c`). It exposes one fixed stereo, 48kHz,
+Float32 duplex device named **AudioMixer Virtual Microphone**: AudioMixer
+writes the mix to its output side via a normal AUHAL output unit; Teams/
+Zoom read the same frames back from its input side via a normal AUHAL
+input unit.
+
+### Output routing
+
+`HALMixerEngine.OutputConfig` carries two independent slots:
+- `virtualDeviceID` — the virtual mic device, always the **primary** output
+  (the mix clock) when present.
+- `monitorDeviceID` — an optional **secondary**, independently clocked
+  hardware output for local listening, fed from the post-mix bus via its
+  own `ChannelRingBuffer` + `DriftCompensatingReader`.
+
+If the driver isn't installed, `monitorDeviceID` becomes the primary output
+directly — this is the hardware-only fallback, functionally identical to
+pre-virtual-mic behavior. `HALMixerEngine.resolveOutputRouting(_:)` is the
+pure function that resolves this and is unit tested without touching real
+Core Audio devices.
+
+Both the input-strip and monitor-output device pickers filter out the
+virtual mic's own UID (`MixerViewModel.selectableInputDevices` /
+`selectableMonitorDevices`) so it can never be routed back into itself.
+
+### Install/update/remove lifecycle
+
+`VirtualDriverManager` never performs privileged filesystem operations
+itself. It opens a signed `.pkg` with `NSWorkspace`, which hands off to
+**Installer.app** — that's what shows the administrator authorization
+prompt and does the actual root-owned copy/remove +
+`launchctl kickstart -k system/com.apple.audio.coreaudiod` (see
+`Driver/Packaging/scripts_install/postinstall` and `scripts_uninstall/postinstall`).
+`MixerViewModel.installOrUpdateVirtualDriver()` / `.removeVirtualDriver()`
+stop the engine first, then await `VirtualDriverManager.waitForDevicePresence(expectPresent:)`
+before rebuilding — this polls Core Audio's device list (with a bounded
+timeout) rather than assuming a fixed restart delay.
+
+### Building and testing the driver locally
+
+```bash
+# Build the .driver bundle + property/IO smoke tests, run them via CFPlugIn
+# (does NOT install anything into /Library/Audio/Plug-Ins/HAL):
+xcodebuild -project AudioMixer.xcodeproj -target AudioMixerVirtualDriverTests -configuration Debug build
+./build/Debug/AudioMixerVirtualDriverTests ./build/Debug/AudioMixerVirtualDriver.driver
+
+# Build the install/uninstall .pkg for manual local testing (unsigned unless
+# PKG_SIGNING_IDENTITY is set — see the script header for all env vars):
+Driver/Packaging/build_installer_pkgs.sh
+```
+
+Installing/removing the driver restarts coreaudiod, which briefly
+interrupts all system audio — this is why it's always an explicit,
+user-initiated action (Install/Update/Remove buttons in `VirtualMicPanelView`),
+never automatic.
 
 ---
 
@@ -79,13 +160,20 @@ Tests/
 SSL 2 (48kHz, 2ch)
   → HALInputUnit (AUHAL, input-only)
       input callback: AudioUnitRender → ChannelRingBuffer (all hw channels)
-  → DriftCompensatingReader.pull()    ← called from output render thread
+  → DriftCompensatingReader.pull()    ← called from primary output render thread
       linear-interp resampling + servo ratio (handles clock drift + 44.1↔48k)
-  → HALMixerEngine.mix()             ← output render callback
+  → HALMixerEngine.mix()             ← primary output render callback (the mix clock)
       per-strip: channel map (L/R index select) → vDSP_vsma (volume+accumulate)
       → vDSP_vclip (soft-limit ±1) → RMS metering (atomic writes)
-  → HALOutputUnit (AUHAL, output-only)
-      → MacBook speakers / BlackHole 2ch
+      → (if monitoring) copy post-mix bus into a ChannelRingBuffer
+  → HALOutputUnit (AUHAL, output-only) — primary
+      → AudioMixer Virtual Microphone (if installed) or MacBook speakers/BlackHole (fallback)
+
+  (in parallel, only when monitoring a hardware device while the virtual mic is primary)
+  → DriftCompensatingReader.pull()    ← called from monitor's own output render thread
+      resamples the post-mix ring at the monitor device's independent rate
+  → HALOutputUnit (AUHAL, output-only) — secondary/monitor
+      → MacBook speakers / BlackHole 2ch / any selected hardware device
 ```
 
 ### Engine switching (A/B)
@@ -115,11 +203,13 @@ Every 3 seconds while running, the Xcode console prints:
 ```
 [AudioMixer diagnostics]
 dev0: callbacks=144 fill=2048 ratio=1.000000 underruns=0 overruns=0 starved=0
+monitor: fill=2048 ratio=1.000000 underruns=0 overruns=0 starved=0
 ```
 - `callbacks=0` → AUHAL input not firing (permission denied or wrong device)
 - `callbacks>0, underruns>0` → ring buffer draining (drift or quantum mismatch)
 - `starved>0` → resampler couldn't get enough input frames (underrun on reader side)
 - `fill≫targetFill(2048)` → producer faster than consumer, servo should correct
+- `monitor:` line only appears when hardware monitoring is active alongside the virtual mic
 
 ---
 
@@ -168,18 +258,45 @@ Before removing `LegacyMixerEngine`:
 
 1. Launch app, verify green "Engine Running" dot.
 2. SSL 2 Input 1 → L=Ch1, R=Ch2, volume 70%, Main routed. VU meters should move when speaking.
-3. Select output (BlackHole or MacBook speakers). Audio should be audible.
+3. Select a monitor output (BlackHole or MacBook speakers). Audio should be audible.
 4. Toggle +6dB boost on/off — immediate volume change, no glitch.
 5. Hot-unplug SSL 2 — app should handle gracefully (error banner or re-enumerate).
 6. **10-minute soak** — sustained audio with no clicks, pops, or crackling.
 7. Check `[AudioMixer diagnostics]` in console: `underruns` and `starved` should stay at 0 or near-zero over the soak.
+
+### Virtual microphone validation (also for the user, not the agent)
+
+Requires an administrator password (Installer.app's authorization prompt)
+and real conferencing apps — not something the agent can complete:
+
+1. In the **Virtual Microphone** panel, click **Install**. Approve the
+   administrator prompt in Installer.app. The status dot should turn green
+   and read "Installed (v1.0)" once coreaudiod finishes restarting.
+2. Open Teams (or Zoom) → audio device settings → select **AudioMixer
+   Virtual Microphone** as the input device. Speak into the SSL 2 with the
+   mixer running: the other party (or a test recording) should hear the
+   mixed input.
+3. With the virtual mic selected in Teams/Zoom, also enable **Monitoring**
+   with a hardware device (e.g. MacBook speakers) selected in the app —
+   confirm you hear the same audio locally with no audible drift or
+   glitching relative to what the conferencing app receives, and that the
+   `monitor:` diagnostics line stays at low/zero underruns over a few
+   minutes.
+4. Disable Monitoring — local playback should stop while the virtual mic
+   feed (as heard by Teams/Zoom) is unaffected.
+5. Click **Remove** in the Virtual Microphone panel, approve the prompt —
+   the device should disappear from Teams/Zoom's device list, and the app
+   should fall back to hardware-only output using the monitor device
+   directly.
 
 ---
 
 ## What's left to do
 
 - **Hardware validation** (blocked: requires user at machine — see protocol above)
-- After validation: delete `LegacyMixerEngine.swift` and `LevelMeter.swift`
+- **Virtual microphone validation** (blocked: requires administrator password + Teams/Zoom — see protocol above)
+- **Signing/notarization for distribution** — `Driver/Packaging/build_installer_pkgs.sh` produces unsigned packages by default; a public release needs `PKG_SIGNING_IDENTITY`/`CODE_SIGN_IDENTITY_DRIVER` (Developer ID Installer / Developer ID Application certificates) plus `xcrun notarytool submit` + `xcrun stapler staple`, none of which are configured in this repo
+- After hardware validation: delete `LegacyMixerEngine.swift` and `LevelMeter.swift`
 - Optional future work: hot-unplug graceful recovery, sample-rate-change listener, Aux outputs
 
 ---

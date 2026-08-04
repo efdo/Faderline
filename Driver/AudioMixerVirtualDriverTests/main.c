@@ -334,6 +334,59 @@ static void TestRingBufferWraparound(AudioServerPlugInDriverRef driver)
     CHECK_STATUS((*driver)->StopIO(driver, kObjectID_Device, 1));
 }
 
+/* A slow/stalled reader must never be handed data from a ring region the
+ * writer has since overwritten (which would sound like garbled audio, or
+ * worse, leak unrelated frames). Once the writer has advanced more than a
+ * full ring's worth of frames past a reader's requested position, the
+ * driver must fall back to silence for that read instead of returning the
+ * now-overwritten bytes. */
+static void TestStaleReadPastOverwriteYieldsSilenceNotGarbage(AudioServerPlugInDriverRef driver)
+{
+    CHECK_STATUS((*driver)->StartIO(driver, kObjectID_Device, 1));
+
+    const UInt32 frames = 256;
+
+    /* Write a distinctive, non-zero pattern at sample-time 0 — this is the
+     * "stale" region a slow reader will later ask for. */
+    float staleWriteBuffer[256 * 2];
+    for (UInt32 f = 0; f < frames * kChannelCount; f++) { staleWriteBuffer[f] = 7.0f; }
+    AudioServerPlugInIOCycleInfo staleWriteCycle = MakeCycleInfo(0);
+    CHECK_STATUS((*driver)->DoIOOperation(driver, kObjectID_Device, kObjectID_Stream_Output, 1,
+                                          kAudioServerPlugInIOOperationWriteMix, frames, &staleWriteCycle, staleWriteBuffer, NULL));
+
+    /* Now advance the writer more than a full ring size ahead, well past
+     * the point where sample-time 0 has been physically overwritten. */
+    const Float64 farAheadSample = (Float64)kRingBufferFrames + 10000.0;
+    float farWriteBuffer[256 * 2];
+    for (UInt32 f = 0; f < frames * kChannelCount; f++) { farWriteBuffer[f] = 9.0f; }
+    AudioServerPlugInIOCycleInfo farWriteCycle = MakeCycleInfo(farAheadSample);
+    CHECK_STATUS((*driver)->DoIOOperation(driver, kObjectID_Device, kObjectID_Stream_Output, 1,
+                                          kAudioServerPlugInIOOperationWriteMix, frames, &farWriteCycle, farWriteBuffer, NULL));
+
+    /* A reader that (having stalled) still asks for sample-time 0 must get
+     * silence, not the "7.0" pattern's underlying ring bytes (which may
+     * have been partially or fully overwritten by the "9.0" write,
+     * depending on exact ring alignment) and not the "9.0" pattern either. */
+    float readBuffer[256 * 2];
+    for (UInt32 f = 0; f < frames * kChannelCount; f++) { readBuffer[f] = 12345.0f; }
+    AudioServerPlugInIOCycleInfo staleReadCycle = MakeCycleInfo(0);
+    CHECK_STATUS((*driver)->DoIOOperation(driver, kObjectID_Device, kObjectID_Stream_Input, 2,
+                                          kAudioServerPlugInIOOperationReadInput, frames, &staleReadCycle, readBuffer, NULL));
+    for (UInt32 f = 0; f < frames * kChannelCount; f++) { CHECK(readBuffer[f] == 0.0f); }
+
+    /* A reader asking for the most recent write, though, must still get
+     * exactly that data — the bounded-overwrite guard must not silence
+     * valid, current reads. */
+    float freshReadBuffer[256 * 2];
+    memset(freshReadBuffer, 0, sizeof(freshReadBuffer));
+    AudioServerPlugInIOCycleInfo freshReadCycle = MakeCycleInfo(farAheadSample);
+    CHECK_STATUS((*driver)->DoIOOperation(driver, kObjectID_Device, kObjectID_Stream_Input, 2,
+                                          kAudioServerPlugInIOOperationReadInput, frames, &freshReadCycle, freshReadBuffer, NULL));
+    CHECK(memcmp(farWriteBuffer, freshReadBuffer, sizeof(farWriteBuffer)) == 0);
+
+    CHECK_STATUS((*driver)->StopIO(driver, kObjectID_Device, 1));
+}
+
 int main(int argc, const char *argv[])
 {
     if (argc < 2)
@@ -375,6 +428,7 @@ int main(int argc, const char *argv[])
     TestSilenceOnUnderrun(driver);
     TestWriteMixThenReadInputRoundTrip(driver);
     TestRingBufferWraparound(driver);
+    TestStaleReadPastOverwriteYieldsSilenceNotGarbage(driver);
     TestClientLifecycleAndClock(driver);
 
     (*driver)->Release(driver);
