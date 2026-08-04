@@ -15,17 +15,19 @@
 		606ABCB6D34048B79BD313E0 /* AudioChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F27C3ABF1454B14BC384661 /* AudioChannel.swift */; };
 		64A65E15E1E14C8189302DB3 /* AudioDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5403B998E3947F488B23662 /* AudioDevice.swift */; };
 		6F1EB81A98C14869B2826B8B /* MixerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEBF341B71494C3F86ABA377 /* MixerViewModel.swift */; };
-		7B169049635F42F78A83745A /* InputStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EBE19FD16D34CBF9121585B /* InputStripView.swift */; };
 		8293CA45BC1A4157AD9769F2 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 786DFE9EF3C24401AF9AB122 /* CoreAudio.framework */; };
-		8E58769EA903459391395596 /* OutputStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8354BB0832FE45459065D883 /* OutputStripView.swift */; };
 		9BDFA349C3AC49C2B1FE2A1A /* LegacyMixerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0474FED8E94643CFB161F3C1 /* LegacyMixerEngine.swift */; };
 		A1B2C3D4E5F60718293A4B01 /* ChannelRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B02 /* ChannelRingBuffer.swift */; };
 		A1B2C3D4E5F60718293A4B03 /* DriftCompensatingReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B04 /* DriftCompensatingReader.swift */; };
 		A1B2C3D4E5F60718293A4B05 /* HALAudioUnits.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B06 /* HALAudioUnits.swift */; };
 		A1B2C3D4E5F60718293A4B07 /* HALMixerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B08 /* HALMixerEngine.swift */; };
 		A1B2C3D4E5F60718293A4B09 /* MixerTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B10 /* MixerTheme.swift */; };
+		DD65FFEBCD78CE57C1D0C472 /* FaderTaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB623D7FD1D579E5A18BBC5D /* FaderTaper.swift */; };
+		B2C0294BDE8AF72AEA3D2E9C /* FaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0564B9E458BB25DDE8AB88E /* FaderView.swift */; };
+		3A822282B748F334DB601D33 /* PanKnobView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC420EF33FDAB3EF19B4BE09 /* PanKnobView.swift */; };
+		DC0453E36B32B37458CF74D2 /* ChannelMeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5320E7EB2196B5BD3A2AE8BC /* ChannelMeterView.swift */; };
+		557E9E9145C51D6E388F4E7A /* ConsoleStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62A7127C8E928B63376098D /* ConsoleStripView.swift */; };
 		A86BAAAF64A3430BA1E00F4D /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 89C84597706C4D16AE115BAD /* AVFoundation.framework */; };
-		B0F9B84BE73F430696115552 /* VUMeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 216A2DD88A2A40A3AC8EB282 /* VUMeterView.swift */; };
 		B152648A277941A79F057A42 /* DeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7EEBBBFDAB44727A3FA09F6 /* DeviceManager.swift */; };
 		C7488D1ED7714BA5A0011C05 /* OutputStripViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F0A8636F1AD435288543AB8 /* OutputStripViewModel.swift */; };
 		D4969B645F9042EC87368959 /* AudioMixerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 405AFF3E93BD48F4A551AF21 /* AudioMixerApp.swift */; };
@@ -36,20 +38,22 @@
 		0F27C3ABF1454B14BC384661 /* AudioChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioChannel.swift; sourceTree = "<group>"; };
 		18B9EBFBC9A441A48E22BE19 /* LevelMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelMeter.swift; sourceTree = "<group>"; };
 		1E58BE60E14A4286BF87CA4B /* MixerConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerConfiguration.swift; sourceTree = "<group>"; };
-		216A2DD88A2A40A3AC8EB282 /* VUMeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VUMeterView.swift; sourceTree = "<group>"; };
 		2F0A8636F1AD435288543AB8 /* OutputStripViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputStripViewModel.swift; sourceTree = "<group>"; };
 		405AFF3E93BD48F4A551AF21 /* AudioMixerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerApp.swift; sourceTree = "<group>"; };
 		42346062E9A64391AB989809 /* AudioMixer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AudioMixer.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		5EBE19FD16D34CBF9121585B /* InputStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputStripView.swift; sourceTree = "<group>"; };
 		61930B8341B94C2782C35180 /* AudioMixer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AudioMixer.entitlements; sourceTree = "<group>"; };
 		65C5BE9AB6024A4ABB16038B /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		786DFE9EF3C24401AF9AB122 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
-		8354BB0832FE45459065D883 /* OutputStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputStripView.swift; sourceTree = "<group>"; };
 		89C84597706C4D16AE115BAD /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		A1B2C3D4E5F60718293A4B02 /* ChannelRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelRingBuffer.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B04 /* DriftCompensatingReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriftCompensatingReader.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B06 /* HALAudioUnits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HALAudioUnits.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B08 /* HALMixerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HALMixerEngine.swift; sourceTree = "<group>"; };
+		BB623D7FD1D579E5A18BBC5D /* FaderTaper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaderTaper.swift; sourceTree = "<group>"; };
+		F0564B9E458BB25DDE8AB88E /* FaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaderView.swift; sourceTree = "<group>"; };
+		AC420EF33FDAB3EF19B4BE09 /* PanKnobView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanKnobView.swift; sourceTree = "<group>"; };
+		5320E7EB2196B5BD3A2AE8BC /* ChannelMeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelMeterView.swift; sourceTree = "<group>"; };
+		C62A7127C8E928B63376098D /* ConsoleStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleStripView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B10 /* MixerTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerTheme.swift; sourceTree = "<group>"; };
 		AAFECB981EB745E6B8C6ADE2 /* InputStripViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputStripViewModel.swift; sourceTree = "<group>"; };
 		B1393959C9A64828BBAA5CE0 /* MixerWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerWindow.swift; sourceTree = "<group>"; };
@@ -124,6 +128,7 @@
 				A1B2C3D4E5F60718293A4B04 /* DriftCompensatingReader.swift */,
 				A1B2C3D4E5F60718293A4B06 /* HALAudioUnits.swift */,
 				A1B2C3D4E5F60718293A4B08 /* HALMixerEngine.swift */,
+				BB623D7FD1D579E5A18BBC5D /* FaderTaper.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -151,11 +156,12 @@
 		D1570616753A40688CB1C24D /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				5EBE19FD16D34CBF9121585B /* InputStripView.swift */,
 				B1393959C9A64828BBAA5CE0 /* MixerWindow.swift */,
 				A1B2C3D4E5F60718293A4B10 /* MixerTheme.swift */,
-				8354BB0832FE45459065D883 /* OutputStripView.swift */,
-				216A2DD88A2A40A3AC8EB282 /* VUMeterView.swift */,
+				F0564B9E458BB25DDE8AB88E /* FaderView.swift */,
+				AC420EF33FDAB3EF19B4BE09 /* PanKnobView.swift */,
+				5320E7EB2196B5BD3A2AE8BC /* ChannelMeterView.swift */,
+				C62A7127C8E928B63376098D /* ConsoleStripView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -225,11 +231,13 @@
 				3B817CC0D6164076A75C8536 /* InputStripViewModel.swift in Sources */,
 				6F1EB81A98C14869B2826B8B /* MixerViewModel.swift in Sources */,
 				C7488D1ED7714BA5A0011C05 /* OutputStripViewModel.swift in Sources */,
-				7B169049635F42F78A83745A /* InputStripView.swift in Sources */,
 				08C9425BE29343EDB0F61F65 /* MixerWindow.swift in Sources */,
 				A1B2C3D4E5F60718293A4B09 /* MixerTheme.swift in Sources */,
-				8E58769EA903459391395596 /* OutputStripView.swift in Sources */,
-				B0F9B84BE73F430696115552 /* VUMeterView.swift in Sources */,
+				DD65FFEBCD78CE57C1D0C472 /* FaderTaper.swift in Sources */,
+				B2C0294BDE8AF72AEA3D2E9C /* FaderView.swift in Sources */,
+				3A822282B748F334DB601D33 /* PanKnobView.swift in Sources */,
+				DC0453E36B32B37458CF74D2 /* ChannelMeterView.swift in Sources */,
+				557E9E9145C51D6E388F4E7A /* ConsoleStripView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

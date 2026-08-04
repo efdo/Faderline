@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Main mixer window with input strips on the left and output strip on the right.
+/// Main mixer window: a console-style row of channel strips (inputs, then
+/// the main output) aligned against a left-hand row-label gutter.
 struct MixerWindow: View {
     @Environment(MixerViewModel.self) private var viewModel
 
@@ -25,7 +26,7 @@ struct MixerWindow: View {
                 .background(MixerTheme.errorBannerBg)
             }
 
-            // Engine status
+            // Engine status + global settings
             HStack {
                 Circle()
                     .fill(viewModel.mixerEngine.isRunning ? MixerTheme.engineRunning : MixerTheme.engineStopped)
@@ -34,27 +35,29 @@ struct MixerWindow: View {
                     .font(.caption)
                     .foregroundStyle(MixerTheme.textSecondary)
                 Spacer()
+                Toggle("Low latency", isOn: Binding(
+                    get: { viewModel.lowLatencyModeEnabled },
+                    set: { viewModel.setLowLatencyModeEnabled($0) }
+                ))
+                .toggleStyle(.switch)
+                .font(.caption)
+                .foregroundStyle(MixerTheme.textLabel)
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
+            .padding(.bottom, 4)
 
-            HStack(alignment: .top, spacing: 16) {
-                // Input strips
-                VStack(spacing: 12) {
-                    ForEach(viewModel.inputStrips) { strip in
-                        InputStripView(strip: strip)
-                    }
+            // Console: row-label gutter + one strip per input + the main output strip.
+            HStack(alignment: .top, spacing: 8) {
+                ConsoleGutterView()
+                ForEach(viewModel.inputStrips) { strip in
+                    ConsoleStripView(kind: .input(strip))
                 }
-
-                // Output strip
-                VStack(spacing: 12) {
-                    OutputStripView(strip: viewModel.mainOutput)
-                    Spacer()
-                }
+                ConsoleStripView(kind: .main(viewModel.mainOutput))
             }
             .padding(16)
         }
-        .background(MixerTheme.windowBg)
-        .frame(minWidth: 650, minHeight: 400)
+        .background(MixerTheme.consoleBg)
+        .frame(minWidth: 440, minHeight: 560)
     }
 }

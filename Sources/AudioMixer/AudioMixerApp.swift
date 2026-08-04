@@ -30,7 +30,7 @@ struct AudioMixerApp: App {
                 }
         }
         .windowResizability(.contentSize)
-        .defaultSize(width: 700, height: 500)
+        .defaultSize(width: 460, height: 580)
     }
 
     private func requestMicrophonePermission() async {

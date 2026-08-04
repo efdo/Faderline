@@ -46,13 +46,15 @@ do {
         var deviceUID: String
         var leftChannelIndex: Int
         var rightChannelIndex: Int
-        var volume: Float
-        var boostEnabled: Bool
+        var gainDB: Float
+        var pan: Float
+        var muted: Bool
         var routeToMain: Bool
     }
 
     struct OutputStripConfig: Codable, Equatable {
         var deviceUID: String
+        var gainDB: Float
     }
 
     struct MixerConfiguration: Codable {
@@ -64,9 +66,9 @@ do {
     let config = MixerConfiguration(
         inputs: [
             InputStripConfig(deviceUID: "ssl2", leftChannelIndex: 0, rightChannelIndex: 1,
-                             volume: 0.75, boostEnabled: true, routeToMain: true),
+                             gainDB: 3.5, pan: -0.5, muted: false, routeToMain: true),
         ],
-        mainOutput: OutputStripConfig(deviceUID: "blackhole"),
+        mainOutput: OutputStripConfig(deviceUID: "blackhole", gainDB: 0),
         lowLatencyModeEnabled: true
     )
 
@@ -75,24 +77,72 @@ do {
 
     assertEqual(decoded.inputs.count, 1, "inputs count")
     assertEqual(decoded.inputs[0].deviceUID, "ssl2", "deviceUID")
-    assertEqual(decoded.inputs[0].volume, 0.75, "volume")
-    assert(decoded.inputs[0].boostEnabled, "boostEnabled")
+    assertEqual(decoded.inputs[0].gainDB, 3.5, "gainDB")
+    assertEqual(decoded.inputs[0].pan, -0.5, "pan")
+    assert(!decoded.inputs[0].muted, "muted")
     assertEqual(decoded.mainOutput.deviceUID, "blackhole", "mainOutput deviceUID")
+    assertEqual(decoded.mainOutput.gainDB, 0, "mainOutput gainDB")
     assert(decoded.lowLatencyModeEnabled, "lowLatencyModeEnabled")
 }
 
-// MARK: - Volume Boost Logic
+// MARK: - Fader Taper Logic
 
-print("▸ Volume boost logic")
+// Mirrors Sources/AudioMixer/Audio/FaderTaper.swift's core relationships,
+// since this standalone script can't @testable import the real module.
+// Keep this in sync if that breakpoint table or pan law ever changes.
+print("▸ Fader taper logic")
 do {
-    func effectiveVolume(volume: Float, boostEnabled: Bool) -> Float {
-        boostEnabled ? min(volume * 2.0, 2.0) : volume
+    enum FaderTaper {
+        static let breakpoints: [(p: Float, db: Float)] = [
+            (0.00, -60), (0.05, -50), (0.13, -40), (0.21, -30), (0.26, -25),
+            (0.32, -20), (0.40, -15), (0.50, -10), (0.62, -5), (0.70, -3),
+            (0.80, 0), (0.90, 3), (1.00, 6),
+        ]
+
+        static func db(forPosition p: Float) -> Float {
+            let clamped = min(max(p, 0), 1)
+            if clamped <= 0 { return -.infinity }
+            if clamped >= 1 { return breakpoints.last!.db }
+            for i in 1..<breakpoints.count {
+                let lo = breakpoints[i - 1]
+                let hi = breakpoints[i]
+                if clamped <= hi.p {
+                    let t = (clamped - lo.p) / (hi.p - lo.p)
+                    return lo.db + t * (hi.db - lo.db)
+                }
+            }
+            return breakpoints.last!.db
+        }
+
+        static func gain(forDB db: Float) -> Float {
+            if db.isInfinite && db < 0 { return 0 }
+            if db <= -60 { return 0 }
+            return pow(10, db / 20)
+        }
+
+        static func panGains(_ pan: Float) -> (left: Float, right: Float) {
+            let clamped = min(max(pan, -1), 1)
+            let angle = (clamped + 1) * (Float.pi / 4)
+            let sqrt2 = Float(2).squareRoot()
+            return (cos(angle) * sqrt2, sin(angle) * sqrt2)
+        }
     }
 
-    assertEqual(effectiveVolume(volume: 0.5, boostEnabled: false), 0.5, "no boost")
-    assertEqual(effectiveVolume(volume: 0.5, boostEnabled: true), 1.0, "boost doubles")
-    assertEqual(effectiveVolume(volume: 1.0, boostEnabled: true), 2.0, "boost at max")
-    assertEqual(effectiveVolume(volume: 0.8, boostEnabled: true), 1.6, "boost 0.8")
+    assertEqual(FaderTaper.db(forPosition: 0.80), 0, "unity sits at 80% of fader travel")
+    assert(abs(FaderTaper.gain(forDB: FaderTaper.db(forPosition: 0.80)) - 1.0) < 0.001,
+           "position 0.80 -> 0 dB -> gain 1.0")
+    assert(abs(FaderTaper.gain(forDB: FaderTaper.db(forPosition: 1.0)) - 1.995) < 0.01,
+           "position 1.0 -> +6 dB -> gain ~1.995")
+    assertEqual(FaderTaper.gain(forDB: FaderTaper.db(forPosition: 0)), 0,
+                "position 0 -> gain 0 (true off, not just quiet)")
+
+    let center = FaderTaper.panGains(0)
+    assert(abs(center.left - 1.0) < 0.001 && abs(center.right - 1.0) < 0.001,
+           "pan center is unity on both channels (0 dB center law)")
+    let hardRight = FaderTaper.panGains(1)
+    assert(abs(hardRight.left) < 0.001, "pan hard right silences the left channel")
+    assert(abs(hardRight.right - Float(2).squareRoot()) < 0.001,
+           "pan hard right boosts the right channel to sqrt(2)")
 }
 
 // MARK: - Level Calculation (RMS)

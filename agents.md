@@ -42,13 +42,14 @@ Sources/AudioMixer/
 ├── Models/
 │   ├── AudioDevice.swift          # CoreAudio device ID + metadata wrapper
 │   ├── AudioChannel.swift         # Channel descriptor (index, label)
-│   └── MixerConfiguration.swift   # Codable persistence (UserDefaults JSON)
+│   └── MixerConfiguration.swift   # Codable persistence (UserDefaults JSON) + legacy migration
 ├── Audio/
 │   ├── ChannelRingBuffer.swift    # Lock-free SPSC N-channel planar ring buffer (atomics)
 │   ├── DriftCompensatingReader.swift  # Linear-interp resampler + servo drift correction
 │   ├── HALAudioUnits.swift        # HALInputUnit + HALOutputUnit (raw AUHAL wrappers)
 │   ├── HALMixerEngine.swift       # ★ Active engine — AUHAL-based, LadioCast-style
 │   ├── LegacyMixerEngine.swift    # AVAudioEngine-based engine (kept for A/B, do NOT delete yet)
+│   ├── FaderTaper.swift           # Pure dB↔position↔gain math + pan law — no UI import, unit-tested
 │   ├── DeviceManager.swift        # CoreAudio HAL device enumeration + hot-plug
 │   └── LevelMeter.swift           # Unused tap helper (legacy, safe to ignore)
 ├── ViewModels/
@@ -56,15 +57,16 @@ Sources/AudioMixer/
 │   ├── InputStripViewModel.swift
 │   └── OutputStripViewModel.swift
 └── Views/
-    ├── MixerTheme.swift           # Central color palette — change colors here only
-    ├── MixerWindow.swift          # Main 2-column layout + error banner + engine status
-    ├── InputStripView.swift       # Device picker, channel selectors, volume, routing
-    ├── OutputStripView.swift      # Device picker + L/R level meters
-    └── VUMeterView.swift          # Animated horizontal level bar
+    ├── MixerTheme.swift           # Central color palette + MixerTheme.Metrics + ConsoleGutterView/ConsoleRow
+    ├── MixerWindow.swift          # Console layout: gutter + one ConsoleStripView per strip
+    ├── ConsoleStripView.swift     # One channel strip (input or main flavor) + ConsoleScaleView
+    ├── FaderView.swift            # Vertical dB-calibrated fader (drag / shift-drag / double-click)
+    ├── PanKnobView.swift          # Circular pan/balance knob
+    └── ChannelMeterView.swift     # Vertical stereo meter: peak-hold marker + clip latch
 
 Tests/
-├── AudioMixerTests/AudioMixerTests.swift      # 15 standalone tests (run via swift script)
-└── AudioMixerEngineTests/EngineTests.swift    # 13 XCTest tests for ring buffer + resampler
+├── AudioMixerTests/AudioMixerTests.swift      # ~21 standalone tests (run via swift script)
+└── AudioMixerEngineTests/EngineTests.swift    # ~39 XCTest tests: ring buffer, resampler, fader taper, config migration
 ```
 
 ---
@@ -82,8 +84,11 @@ SSL 2 (48kHz, 2ch)
   → DriftCompensatingReader.pull()    ← called from output render thread
       linear-interp resampling + servo ratio (handles clock drift + 44.1↔48k)
   → HALMixerEngine.mix()             ← output render callback
-      per-strip: channel map (L/R index select) → vDSP_vsma (volume+accumulate)
-      → vDSP_vclip (soft-limit ±1) → RMS metering (atomic writes)
+      per-strip: channel map (L/R index select) → pan (pre-resolved L/R gains)
+      → vDSP_vsma (volume+accumulate, gated by route/mute/solo-in-place)
+      → pre-fader RMS + peak metering (atomic writes)
+      → master gain/mute → peak (pre-limiter) → vDSP_vclip (soft-limit ±1)
+      → post-limiter RMS metering
   → HALOutputUnit (AUHAL, output-only)
       → MacBook speakers / BlackHole 2ch
 ```
@@ -102,12 +107,24 @@ func start(inputs: [InputConfig], output: OutputConfig) throws
 func stop()
 func setVolume(_ volume: Float, forInput index: Int)   // atomic, no rebuild
 func setRouteToMain(_ enabled: Bool, forInput index: Int)  // atomic, no rebuild
-var inputLevels: [Int: (left: Float, right: Float)]    // polled at 30Hz
-var outputLevel: (left: Float, right: Float)]
+func setPan(_ pan: Float, forInput index: Int)             // atomic; panGains resolved off the render thread
+func setMute(_ muted: Bool, forInput index: Int)           // atomic, no rebuild
+func setSolo(_ soloed: Bool, forInput index: Int)          // atomic; recomputes anySolo across all strips
+func setOutputVolume(_ gain: Float)                        // atomic master gain, no rebuild
+func setOutputMuted(_ muted: Bool)                         // atomic master mute, no rebuild
+var inputLevels: [Int: (left: Float, right: Float)]    // polled at 30Hz, pre-fader RMS
+var inputPeaks: [Int: (left: Float, right: Float)]     // drained via exchange(0, ...) at 30Hz
+var outputLevel: (left: Float, right: Float)]          // post-limiter RMS
+var outputPeak: (left: Float, right: Float)            // pre-limiter peak; >= 1.0 means a genuine over
 var isRunning: Bool
 var lastError: String?
-var diagnostics: String   // callbacks/fill/ratio/underruns — check this first when debugging
+var diagnostics: String   // callbacks/fill/ratio/underruns/mute/solo/pan/peak — check this first when debugging
 ```
+
+`InputConfig` carries `pan`/`mute`/`solo` in addition to the original
+`volume`/`routeToMain`; `OutputConfig` carries the master `volume` (linear
+gain from the fader taper). Gain values passed as `volume` are **linear
+gain from `FaderTaper.gain(forDB:)`**, not the old 0...1 slider value.
 
 ### Diagnostics
 
@@ -135,6 +152,50 @@ dev0: callbacks=144 fill=2048 ratio=1.000000 underruns=0 overruns=0 starved=0
 
 `HALMixerEngine.mix` is `static` specifically so it captures no `self` — only `RenderState` (a `final class` whose inner atomics are RT-safe).
 
+Pan is the one addition that could easily leak `cos`/`sin` into the render
+thread — don't let it. `setPan(_:forInput:)` resolves `FaderTaper.panGains(_:)`
+on the calling (UI) thread and stores the two resulting floats (`panL`/`panR`)
+as atomics; `mix()` only ever does a relaxed load and a multiply.
+
+Peak metering is a plain (non-atomic-RMW) load-compare-store running max on
+the render thread, drained via `Atomic.exchange(0, ...)` on the UI thread at
+~30 Hz. This is deliberately racy: worst case the UI misses one render
+quantum's peak sample. That's an acceptable trade for staying lock-free —
+don't "fix" it into a compare-and-swap loop.
+
+---
+
+## Console UI architecture
+
+The mixer window (`MixerWindow.swift`) is a Logic Pro–style console: a row of
+vertical channel strips (one `ConsoleStripView` per input, plus one for the
+main output) aligned against a left-hand row-label gutter
+(`ConsoleGutterView`), not the old horizontal LadioCast-style cards.
+
+- **`ConsoleRow`** (in `MixerTheme.swift`) is the single source of truth for
+  row order, labels, and heights (Device, Channels, Output, Pan, dB,
+  fader+meter, Mute/Solo, name plate). Both `ConsoleGutterView` and
+  `ConsoleStripView` iterate `ConsoleRow.allCases` — **keep them in sync** if
+  you add/remove/reorder a row, or the gutter labels will drift from the
+  strip controls.
+- **`FaderTaper.swift`** (in `Audio/`, not `Views/` — it's pure math, no UI
+  import, and unit-tested directly) is the single source of truth for
+  dB↔position↔gain and the pan law. `FaderView`, `ConsoleScaleView` (inside
+  `ConsoleStripView.swift`), and `ChannelMeterView` all read positions through
+  it, which is why the fader's travel, the shared tick column, and the
+  meter's fill always agree visually.
+- **There is no `+6 dB` boost button anymore.** The fader spans −∞…+6 dB
+  (unity detent at 80% of travel); `InputStripViewModel`/`OutputStripViewModel`
+  expose `gainDB` as the source of truth, plus computed `gain`/`faderPosition`.
+- **Solo and master mute are intentionally not persisted** in
+  `MixerConfiguration` — relaunching into a soloed or silent mix would be a
+  footgun. Strip mute *is* persisted (it's a real mix decision, e.g. "input 2
+  is unused").
+- **`ConsoleStripKind`** (`.input`/`.main`) drives which rows a strip shows;
+  the main strip has no Channels/Output/Pan/Solo (rendered as em-dash
+  placeholders) since it represents the physical output device, not a routed
+  source.
+
 ---
 
 ## Xcode project maintenance
@@ -159,6 +220,8 @@ If Xcode says "cannot find X in scope" but `swift build` succeeds, the pbxproj i
 | No sandbox | Sandboxing `com.apple.security.device.audio-input` was removed in an earlier session to debug issues. The app uses TCC privacy permissions instead. |
 | Deployment target macOS 15 | Required for `Synchronization.Atomic` (used in ring buffer and strip parameter slots). |
 | `NSMicrophoneUsageDescription` in Info.plist | macOS 14+ TCC blocks AUHAL input silently without this. The app requests access at launch via `AVCaptureDevice.requestAccess`. |
+| Console-style UI (Logic Pro–like strips) | Replaced the horizontal LadioCast-style cards. Added dB-calibrated fader (`FaderTaper`), pan/balance, mute, solo, and peak/clip metering — the `+6dB` button was retired since the fader's range subsumes it. |
+| Pan law: constant-power with 0 dB center | A traditional -3 dB center pan law would have changed every existing strip's level on upgrade. Center must be a no-op; the trade-off is up to +3 dB extra headroom at hard pan, made visible via the clip indicator. |
 
 ---
 
@@ -167,18 +230,21 @@ If Xcode says "cannot find X in scope" but `swift build` succeeds, the pbxproj i
 Before removing `LegacyMixerEngine`:
 
 1. Launch app, verify green "Engine Running" dot.
-2. SSL 2 Input 1 → L=Ch1, R=Ch2, volume 70%, Main routed. VU meters should move when speaking.
+2. SSL 2 Input 1 → L=Ch1, R=Ch2, fader at 0 dB, Main routed. Meters should move when speaking.
 3. Select output (BlackHole or MacBook speakers). Audio should be audible.
-4. Toggle +6dB boost on/off — immediate volume change, no glitch.
-5. Hot-unplug SSL 2 — app should handle gracefully (error banner or re-enumerate).
-6. **10-minute soak** — sustained audio with no clicks, pops, or crackling.
-7. Check `[AudioMixer diagnostics]` in console: `underruns` and `starved` should stay at 0 or near-zero over the soak.
+4. Drag the fader through its full range, including past 0 dB toward +6 dB — smooth, no glitch. Type an exact dB value into the field and press Return.
+5. Pan hard left/right on a strip with the same input on L and R — audio should move fully to one side.
+6. Mute and Solo each strip — Solo should silence all other non-soloed strips; Mute should only silence that strip.
+7. Drive a strip hot enough to clip — the clip LED above its meter should latch; click it to reset.
+8. Hot-unplug SSL 2 — app should handle gracefully (error banner or re-enumerate).
+9. **10-minute soak** — sustained audio with no clicks, pops, or crackling.
+10. Check `[AudioMixer diagnostics]` in console: `underruns` and `starved` should stay at 0 or near-zero over the soak.
 
 ---
 
 ## What's left to do
 
-- **Hardware validation** (blocked: requires user at machine — see protocol above)
+- **Hardware validation** (blocked: requires user at machine — see protocol above). Re-run the full soak after the console UI change even if it passed before: `mix()` gained pan/mute/solo/peak logic on the render path.
 - After validation: delete `LegacyMixerEngine.swift` and `LevelMeter.swift`
 - Optional future work: hot-unplug graceful recovery, sample-rate-change listener, Aux outputs
 
@@ -264,14 +330,30 @@ Without `--info`, you will see **zero log lines** and assume the engine is silen
 
 ---
 
-### 5. Both VU meter and level polling work; bars may appear frozen at first
+### 5. The meter's dB scale is shared with the fader — levels near the noise floor will look empty, not frozen
 
-The VU meter applies a **3× sensitivity multiplier** in `VUMeterView` before
-display. Raw RMS levels from a quiet room / noise floor are typically `0.001–0.01`
-(−60 to −40 dBFS), which after ×3 still look near-zero. The bars should move
-visibly when speaking into or playing audio through the SSL 2.
+`ChannelMeterView` positions its fill through the same `FaderTaper.position(forDB:)`
+mapping as `FaderView`, so the meter's visual scale matches the fader's: unity
+(0 dB) sits at 80% of the track, and anything below the fader's -60 dB floor
+reads as empty. Raw RMS levels from a quiet room / noise floor are typically
+`0.001–0.01` linear (-60 to -40 dBFS) — genuinely near the bottom of the
+scale, not a display bug. The bars should move visibly and rise toward the
+green/amber boundary (-12 dB) when speaking into or playing audio through the
+SSL 2. (There is no artificial sensitivity multiplier anymore — the old
+`VUMeterView`'s `×3` hack and the engine's `×2` on stored RMS were both
+removed when the meter switched to dB-scale positioning.)
 
 If bars show 0 after engine start, check the diagnostics log first:
 - `callbacks=0` → AUHAL input callback is not firing (microphone permission denied, or wrong device selected)
 - `callbacks>0, fill≈2048, underruns=0` → engine is healthy; signal may genuinely be silent
 - `starved>0` → resampler underrun; ring buffer not filling fast enough
+
+### 6. Peak-hold on the meter is a UI-side illusion, not an engine feature
+
+`HALMixerEngine.inputPeaks`/`outputPeak` only ever report "the peak magnitude
+since the last ~33 ms poll" — far too brief to read visually, and by design
+(see the real-time safety notes above on why the render thread can't do more
+than a running max). The **hold** (steady for ~1.2 s) and **decay** (~20 dB/s
+falloff) are implemented entirely in `ChannelMeterView`'s private `PeakHold`,
+purely as a function of elapsed wall-clock time via `TimelineView`. If a peak
+marker looks like it's not decaying, check `ChannelMeterView`, not the engine.

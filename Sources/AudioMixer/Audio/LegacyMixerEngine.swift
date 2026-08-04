@@ -149,6 +149,34 @@ final class LegacyMixerEngine {
 
     var lastError: String?
 
+    /// Accepted for A/B parity with `HALMixerEngine` (so `MixerViewModel` can
+    /// set it regardless of which engine the `ActiveMixerEngine` typealias
+    /// points at). The legacy engine has no adjustable ring-buffer target
+    /// fill, so this has no effect on its behavior.
+    enum LatencyMode: String, Codable {
+        case normal
+        case low
+    }
+    var latencyMode: LatencyMode = .normal
+
+    /// Basic status string for A/B parity with `HALMixerEngine.diagnostics`;
+    /// the legacy engine doesn't track the same underrun/fill/ratio metrics.
+    var diagnostics: String {
+        guard isRunning else { return "legacy engine stopped" }
+        return "legacy engine running; \(stripNodes.count) active strip(s), \(sharedCaptures.count) capture engine(s)"
+    }
+
+    // MARK: - Live mix state (A/B parity with HALMixerEngine)
+
+    /// Per-strip state mirrored so `applyEffectiveVolume` can recompute the
+    /// combined route/mute/solo result without re-deriving it from the node.
+    private var stripVolume: [Int: Float] = [:]
+    private var stripRouted: [Int: Bool] = [:]
+    private var stripMuted: [Int: Bool] = [:]
+    private var stripSoloed: [Int: Bool] = [:]
+    private var outputGain: Float = 1.0
+    private var outputMuted: Bool = false
+
     // MARK: - Configuration
 
     struct InputConfig {
@@ -157,10 +185,18 @@ final class LegacyMixerEngine {
         let rightChannel: Int
         var volume: Float
         var routeToMain: Bool
+        /// Balance/pan in `[-1, +1]`; 0 is center. Applied directly to
+        /// `AVAudioMixerNode.pan` (kept for A/B parity only — no attempt is
+        /// made to match `FaderTaper`'s constant-power law here).
+        var pan: Float = 0
+        var mute: Bool = false
+        var solo: Bool = false
     }
 
     struct OutputConfig {
         let deviceID: AudioDeviceID
+        /// Master linear gain applied via `AVAudioMixerNode.outputVolume`.
+        var volume: Float = 1.0
     }
 
     // MARK: - Internal state
@@ -252,6 +288,9 @@ final class LegacyMixerEngine {
         log("Output: rate=\(outputRate) Hz")
 
         let mainMixer = outputEngine.mainMixerNode
+        outputGain = output.volume
+        outputMuted = false
+        mainMixer.outputVolume = output.volume
 
         // Group active inputs by device ID
         var deviceStrips: [AudioDeviceID: [(index: Int, config: InputConfig)]] = [:]
@@ -259,6 +298,10 @@ final class LegacyMixerEngine {
             guard input.routeToMain, input.deviceID != kAudioObjectUnknown else { continue }
             deviceStrips[input.deviceID, default: []].append((index, input))
         }
+
+        // Only strips that actually make it into the graph (routeToMain
+        // strips above) can meaningfully participate in solo-in-place.
+        let anySoloAtStart = deviceStrips.values.flatMap { $0 }.contains { $0.config.solo }
 
         // For each unique device, create ONE shared capture engine
         for (deviceID, strips) in deviceStrips {
@@ -318,7 +361,13 @@ final class LegacyMixerEngine {
                 outputEngine.attach(mixerNode)
                 outputEngine.connect(sourceNode, to: mixerNode, format: inputStereo)
                 outputEngine.connect(mixerNode, to: mainMixer, format: outputStereo)
-                mixerNode.volume = input.volume
+                mixerNode.pan = input.pan
+                stripVolume[index] = input.volume
+                stripRouted[index] = input.routeToMain
+                stripMuted[index] = input.mute
+                stripSoloed[index] = input.solo
+                let audible = input.routeToMain && !input.mute && (!anySoloAtStart || input.solo)
+                mixerNode.volume = audible ? input.volume : 0
 
                 stripNodes[index] = StripNodes(sourceNode: sourceNode, mixerNode: mixerNode, ringBuffer: ringBuffer)
 
@@ -465,6 +514,12 @@ final class LegacyMixerEngine {
             outputEngine.detach(nodes.mixerNode)
         }
         stripNodes.removeAll()
+        stripVolume.removeAll()
+        stripRouted.removeAll()
+        stripMuted.removeAll()
+        stripSoloed.removeAll()
+        outputGain = 1.0
+        outputMuted = false
 
         inputLevels.removeAll()
         outputLevel = (0, 0)
@@ -472,11 +527,84 @@ final class LegacyMixerEngine {
     }
 
     func setVolume(_ volume: Float, forInput index: Int) {
-        stripNodes[index]?.mixerNode.volume = volume
+        stripVolume[index] = volume
+        applyEffectiveVolume(forInput: index)
     }
 
     func setRouteToMain(_ enabled: Bool, forInput index: Int) {
-        stripNodes[index]?.mixerNode.volume = enabled ? 1.0 : 0.0
+        stripRouted[index] = enabled
+        // Un/re-routing a strip can change whether its solo flag "counts"
+        // (see `anySoloed(among:)`), which can affect every strip's audibility.
+        for idx in stripNodes.keys {
+            applyEffectiveVolume(forInput: idx)
+        }
+    }
+
+    /// Applied directly to `AVAudioMixerNode.pan` — kept for A/B parity only,
+    /// no attempt is made to match `FaderTaper`'s constant-power law.
+    func setPan(_ pan: Float, forInput index: Int) {
+        stripNodes[index]?.mixerNode.pan = pan
+    }
+
+    func setMute(_ muted: Bool, forInput index: Int) {
+        stripMuted[index] = muted
+        applyEffectiveVolume(forInput: index)
+    }
+
+    /// Solo-in-place: when any strip is soloed, only soloed strips are
+    /// audible. A solo change can affect every strip's audibility, not just
+    /// the one that changed.
+    func setSolo(_ soloed: Bool, forInput index: Int) {
+        stripSoloed[index] = soloed
+        for idx in stripNodes.keys {
+            applyEffectiveVolume(forInput: idx)
+        }
+    }
+
+    func setOutputVolume(_ gain: Float) {
+        outputGain = gain
+        applyOutputVolume()
+    }
+
+    func setOutputMuted(_ muted: Bool) {
+        outputMuted = muted
+        applyOutputVolume()
+    }
+
+    /// Peak metering isn't implemented for the legacy engine (kept only for
+    /// A/B hardware comparison, not the active engine) — always reports 0.
+    var inputPeaks: [Int: (left: Float, right: Float)] { [:] }
+    var outputPeak: (left: Float, right: Float) { (0, 0) }
+
+    private func applyEffectiveVolume(forInput index: Int) {
+        guard let node = stripNodes[index]?.mixerNode else { return }
+        let volume = stripVolume[index] ?? 1.0
+        let routed = stripRouted[index] ?? true
+        let muted = stripMuted[index] ?? false
+        let soloed = stripSoloed[index] ?? false
+        let audible = routed && !muted && (!computeAnySolo() || soloed)
+        node.volume = audible ? volume : 0
+    }
+
+    private func computeAnySolo() -> Bool {
+        let pairs = stripNodes.keys.map {
+            (routed: stripRouted[$0] ?? true, soloed: stripSoloed[$0] ?? false)
+        }
+        return Self.anySoloed(among: pairs)
+    }
+
+    /// Pure solo-in-place gating logic, factored out (and left internal, not
+    /// private) for direct unit testing — mirrors `HALMixerEngine.anySoloed(among:)`.
+    /// A soloed-but-unrouted strip must NOT count: it is itself inaudible
+    /// either way (not routed), so letting it count would silence every
+    /// other, properly-routed strip too — turning "solo this channel" into
+    /// "mute everything" instead of isolating the soloed channel.
+    static func anySoloed(among strips: [(routed: Bool, soloed: Bool)]) -> Bool {
+        strips.contains { $0.routed && $0.soloed }
+    }
+
+    private func applyOutputVolume() {
+        outputEngine.mainMixerNode.outputVolume = outputMuted ? 0 : outputGain
     }
 
     // MARK: - Device assignment

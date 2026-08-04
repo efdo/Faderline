@@ -68,22 +68,62 @@ final class MixerViewModel {
         rebuildEngine()
     }
 
-    func updateVolume(_ volume: Float, forStrip strip: InputStripViewModel) {
-        strip.volume = volume
-        mixerEngine.setVolume(strip.effectiveVolume, forInput: strip.id)
+    /// True while any input strip is soloed. Non-soloed strips stay in the
+    /// mix graph (still metering) but go silent at the render thread.
+    var anySolo: Bool {
+        inputStrips.contains { $0.soloed }
+    }
+
+    func setGainDB(_ db: Float, forStrip strip: InputStripViewModel) {
+        strip.gainDB = db
+        mixerEngine.setVolume(strip.gain, forInput: strip.id)
         saveConfiguration()
     }
 
-    func toggleBoost(forStrip strip: InputStripViewModel) {
-        strip.boostEnabled.toggle()
-        mixerEngine.setVolume(strip.effectiveVolume, forInput: strip.id)
+    func setPan(_ pan: Float, forStrip strip: InputStripViewModel) {
+        strip.pan = pan
+        mixerEngine.setPan(pan, forInput: strip.id)
         saveConfiguration()
+    }
+
+    func toggleMute(forStrip strip: InputStripViewModel) {
+        strip.muted.toggle()
+        mixerEngine.setMute(strip.muted, forInput: strip.id)
+        saveConfiguration()
+    }
+
+    /// Solo is transient troubleshooting state, not persisted — launching
+    /// into a soloed mix would be confusing.
+    func toggleSolo(forStrip strip: InputStripViewModel) {
+        strip.soloed.toggle()
+        mixerEngine.setSolo(strip.soloed, forInput: strip.id)
     }
 
     func toggleRouteToMain(forStrip strip: InputStripViewModel) {
         strip.routeToMain.toggle()
         mixerEngine.setRouteToMain(strip.routeToMain, forInput: strip.id)
         saveConfiguration()
+    }
+
+    func setOutputGainDB(_ db: Float) {
+        mainOutput.gainDB = db
+        mixerEngine.setOutputVolume(mainOutput.gain)
+        saveConfiguration()
+    }
+
+    /// Master mute is transient, not persisted — same reasoning as solo:
+    /// relaunching into silence would be a footgun.
+    func toggleOutputMute() {
+        mainOutput.muted.toggle()
+        mixerEngine.setOutputMuted(mainOutput.muted)
+    }
+
+    func resetClip(forStrip strip: InputStripViewModel) {
+        strip.clipped = false
+    }
+
+    func resetOutputClip() {
+        mainOutput.clipped = false
     }
 
     func setLeftChannel(_ index: Int, forStrip strip: InputStripViewModel) {
@@ -102,10 +142,10 @@ final class MixerViewModel {
         // Snapshot config values on the calling (main) thread before touching
         // the audio engine, so the background start closure captures plain
         // value types and avoids accessing @Observable properties off-thread.
-        logger.info("rebuildEngine: output=\(self.mainOutput.selectedDevice.name, privacy: .public) (\(self.mainOutput.selectedDevice.id, privacy: .public))")
+        logger.info("rebuildEngine: output=\(self.mainOutput.selectedDevice.name, privacy: .public) (\(self.mainOutput.selectedDevice.id, privacy: .public)) gainDB=\(self.mainOutput.gainDB, privacy: .public)")
         logger.info("rebuildEngine: latencyMode=\(self.lowLatencyModeEnabled ? "low" : "normal", privacy: .public)")
         for strip in inputStrips {
-            logger.info("rebuildEngine: input[\(strip.id, privacy: .public)] '\(strip.selectedDevice.name, privacy: .public)' id=\(strip.selectedDevice.id, privacy: .public) L=ch\(strip.leftChannelIndex, privacy: .public) R=ch\(strip.rightChannelIndex, privacy: .public) route=\(strip.routeToMain, privacy: .public)")
+            logger.info("rebuildEngine: input[\(strip.id, privacy: .public)] '\(strip.selectedDevice.name, privacy: .public)' id=\(strip.selectedDevice.id, privacy: .public) L=ch\(strip.leftChannelIndex, privacy: .public) R=ch\(strip.rightChannelIndex, privacy: .public) route=\(strip.routeToMain, privacy: .public) gainDB=\(strip.gainDB, privacy: .public) pan=\(strip.pan, privacy: .public) mute=\(strip.muted, privacy: .public) solo=\(strip.soloed, privacy: .public)")
         }
 
         let inputs = inputStrips.map { strip in
@@ -113,11 +153,14 @@ final class MixerViewModel {
                 deviceID: strip.selectedDevice.id,
                 leftChannel: strip.leftChannelIndex,
                 rightChannel: strip.rightChannelIndex,
-                volume: strip.effectiveVolume,
-                routeToMain: strip.routeToMain
+                volume: strip.gain,
+                routeToMain: strip.routeToMain,
+                pan: strip.pan,
+                mute: strip.muted,
+                solo: strip.soloed
             )
         }
-        let output = ActiveMixerEngine.OutputConfig(deviceID: mainOutput.selectedDevice.id)
+        let output = ActiveMixerEngine.OutputConfig(deviceID: mainOutput.selectedDevice.id, volume: mainOutput.gain)
         saveConfiguration()
 
         // `AudioComponentInstanceNew` (called deep inside `start()`) makes a
@@ -150,6 +193,7 @@ final class MixerViewModel {
         levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             // Copy engine levels to view models
+            let peaks = self.mixerEngine.inputPeaks
             for strip in self.inputStrips {
                 if let levels = self.mixerEngine.inputLevels[strip.id] {
                     strip.levelLeft = levels.left
@@ -158,9 +202,22 @@ final class MixerViewModel {
                     strip.levelLeft *= 0.9
                     strip.levelRight *= 0.9
                 }
+                if let peak = peaks[strip.id] {
+                    strip.peakLeft = peak.left
+                    strip.peakRight = peak.right
+                    if peak.left >= 1.0 || peak.right >= 1.0 {
+                        strip.clipped = true
+                    }
+                }
             }
             self.mainOutput.levelLeft = self.mixerEngine.outputLevel.left
             self.mainOutput.levelRight = self.mixerEngine.outputLevel.right
+            let outputPeak = self.mixerEngine.outputPeak
+            self.mainOutput.peakLeft = outputPeak.left
+            self.mainOutput.peakRight = outputPeak.right
+            if outputPeak.left >= 1.0 || outputPeak.right >= 1.0 {
+                self.mainOutput.clipped = true
+            }
         }
 
         // Log diagnostics every 3 seconds to help with debugging.
@@ -179,13 +236,15 @@ final class MixerViewModel {
                     deviceUID: strip.selectedDevice.uid,
                     leftChannelIndex: strip.leftChannelIndex,
                     rightChannelIndex: strip.rightChannelIndex,
-                    volume: strip.volume,
-                    boostEnabled: strip.boostEnabled,
+                    gainDB: strip.gainDB,
+                    pan: strip.pan,
+                    muted: strip.muted,
                     routeToMain: strip.routeToMain
                 )
             },
             mainOutput: MixerConfiguration.OutputStripConfig(
-                deviceUID: mainOutput.selectedDevice.uid
+                deviceUID: mainOutput.selectedDevice.uid,
+                gainDB: mainOutput.gainDB
             ),
             lowLatencyModeEnabled: lowLatencyModeEnabled
         )
@@ -202,14 +261,16 @@ final class MixerViewModel {
             }
             strip.leftChannelIndex = stripConfig.leftChannelIndex
             strip.rightChannelIndex = stripConfig.rightChannelIndex
-            strip.volume = stripConfig.volume
-            strip.boostEnabled = stripConfig.boostEnabled
+            strip.gainDB = stripConfig.gainDB
+            strip.pan = stripConfig.pan
+            strip.muted = stripConfig.muted
             strip.routeToMain = stripConfig.routeToMain
         }
 
         if let device = deviceManager.device(forUID: config.mainOutput.deviceUID) {
             mainOutput.selectedDevice = device
         }
+        mainOutput.gainDB = config.mainOutput.gainDB
         lowLatencyModeEnabled = config.lowLatencyModeEnabled
     }
 }

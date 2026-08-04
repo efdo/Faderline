@@ -12,7 +12,7 @@ Native ARM64 macOS audio mixer. SSL 2 USB audio interface → AUHAL mixing engin
 
 ```bash
 swift build                   # primary — always verify after changes
-swift test                    # 13 XCTest tests (ring buffer + resampler)
+swift test                    # ~39 XCTest tests (ring buffer, resampler, fader taper, config migration)
 xcodebuild -project AudioMixer.xcodeproj -scheme AudioMixer -configuration Debug build
 ```
 
@@ -50,11 +50,29 @@ Use `Atomic<T>` (acquire/release) for all shared state crossing the RT boundary.
   leaves orphaned HAL state that blocks the next launch. The `willTerminateNotification`
   handler in `AudioMixerApp` handles this.
 
+## UI: console-style strips
+
+The mixer window is a Logic Pro–style console: vertical channel strips (one
+per input, plus the main output) aligned against a left-hand row-label
+gutter, not the old horizontal LadioCast-style cards. Row order/heights are
+shared between `ConsoleGutterView` and `ConsoleStripView` via the `ConsoleRow`
+enum and `MixerTheme.Metrics` — **keep both in sync** if you change a row.
+
+Gain is dB-calibrated end-to-end via `Sources/AudioMixer/Audio/FaderTaper.swift`
+(pure math, no UI import, unit-tested): fader position ↔ dB ↔ linear gain,
+plus the pan/balance law. There is no `+6dB` boost button anymore — the fader
+itself spans −∞…+6 dB. `FaderView`, `PanKnobView`, and `ChannelMeterView` all
+read positions through `FaderTaper` so the fader travel, the shared
+`ConsoleScaleView` tick column, and the meter's dB scale always agree.
+
 ## Colors and theme
 
 All UI colors are defined in `Sources/AudioMixer/Views/MixerTheme.swift` using
 `NSColor` semantic system colors for light/dark adaptability. **Do not add
 hardcoded `Color(red:green:blue:)` or `Color(white:)` values elsewhere.**
+`MixerTheme.Metrics` holds the shared row-layout constants (gutter width,
+strip width, row heights) — new console rows should reuse these, not invent
+new magic numbers.
 
 ## Logging
 
