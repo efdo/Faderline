@@ -25,6 +25,13 @@ final class HALMixerEngine {
     private(set) var isRunning = false
     var lastError: String?
 
+    enum LatencyMode: String, Codable {
+        case normal
+        case low
+    }
+
+    var latencyMode: LatencyMode = .normal
+
     // MARK: - Configuration (same shape as the legacy engine)
 
     struct InputConfig {
@@ -110,7 +117,15 @@ final class HALMixerEngine {
 
     private static let maxFrames = 4096
     private static let ringCapacity = 16384
-    private static let targetFill = 2048
+    private static let normalTargetFill = 2048
+    private static let lowTargetFill = 1024
+
+    private var targetFill: Int {
+        switch latencyMode {
+        case .normal: Self.normalTargetFill
+        case .low: Self.lowTargetFill
+        }
+    }
 
     // MARK: - Levels (polled by the UI at ~30 Hz)
 
@@ -151,8 +166,9 @@ final class HALMixerEngine {
     func start(inputs: [InputConfig], output: OutputConfig) throws {
         stop()
         lastError = nil
+        let targetFill = self.targetFill
 
-        log("start() — output=\(output.deviceID), \(inputs.count) inputs")
+        log("start() — output=\(output.deviceID), \(inputs.count) inputs, latency=\(latencyMode.rawValue), targetFill=\(targetFill)")
 
         guard output.deviceID != kAudioObjectUnknown else {
             log("⏭️ No output device, skipping")
@@ -180,11 +196,11 @@ final class HALMixerEngine {
             let inputUnit = try HALInputUnit(deviceID: deviceID,
                                              ringCapacity: Self.ringCapacity,
                                              maxFrames: Self.maxFrames)
-            inputUnit.ring.prefillSilence(frames: Self.targetFill)
+            inputUnit.ring.prefillSilence(frames: targetFill)
             let reader = DriftCompensatingReader(ring: inputUnit.ring,
                                                  inputRate: inputUnit.sampleRate,
                                                  outputRate: outputRate,
-                                                 targetFill: Self.targetFill,
+                                                 targetFill: targetFill,
                                                  maxQuantum: Self.maxFrames)
             devices.append(DeviceSlot(inputUnit: inputUnit, reader: reader, maxFrames: Self.maxFrames))
             log("Device \(deviceID): \(inputUnit.channelCount)ch @ \(inputUnit.sampleRate) Hz → \(outputRate) Hz")

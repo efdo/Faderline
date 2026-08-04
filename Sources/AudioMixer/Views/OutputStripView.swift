@@ -25,6 +25,14 @@ struct OutputStripView: View {
                 }
                 .labelsHidden()
 
+                Toggle("Low latency", isOn: Binding(
+                    get: { viewModel.lowLatencyModeEnabled },
+                    set: { viewModel.setLowLatencyModeEnabled($0) }
+                ))
+                .toggleStyle(.switch)
+                .font(.caption)
+                .foregroundStyle(MixerTheme.textLabel)
+
                 // Level meters
                 HStack(spacing: 4) {
                     Text("L")

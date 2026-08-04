@@ -15,6 +15,7 @@ final class MixerViewModel {
 
     var inputStrips: [InputStripViewModel]
     var mainOutput: OutputStripViewModel
+    var lowLatencyModeEnabled = false
 
     private var levelTimer: Timer?
 
@@ -61,6 +62,12 @@ final class MixerViewModel {
         rebuildEngine()
     }
 
+    func setLowLatencyModeEnabled(_ enabled: Bool) {
+        guard lowLatencyModeEnabled != enabled else { return }
+        lowLatencyModeEnabled = enabled
+        rebuildEngine()
+    }
+
     func updateVolume(_ volume: Float, forStrip strip: InputStripViewModel) {
         strip.volume = volume
         mixerEngine.setVolume(strip.effectiveVolume, forInput: strip.id)
@@ -96,6 +103,7 @@ final class MixerViewModel {
         // the audio engine, so the background start closure captures plain
         // value types and avoids accessing @Observable properties off-thread.
         logger.info("rebuildEngine: output=\(self.mainOutput.selectedDevice.name, privacy: .public) (\(self.mainOutput.selectedDevice.id, privacy: .public))")
+        logger.info("rebuildEngine: latencyMode=\(self.lowLatencyModeEnabled ? "low" : "normal", privacy: .public)")
         for strip in inputStrips {
             logger.info("rebuildEngine: input[\(strip.id, privacy: .public)] '\(strip.selectedDevice.name, privacy: .public)' id=\(strip.selectedDevice.id, privacy: .public) L=ch\(strip.leftChannelIndex, privacy: .public) R=ch\(strip.rightChannelIndex, privacy: .public) route=\(strip.routeToMain, privacy: .public)")
         }
@@ -110,6 +118,7 @@ final class MixerViewModel {
             )
         }
         let output = ActiveMixerEngine.OutputConfig(deviceID: mainOutput.selectedDevice.id)
+        saveConfiguration()
 
         // `AudioComponentInstanceNew` (called deep inside `start()`) makes a
         // synchronous Mach IPC call to coreaudiod whose reply is dispatched on
@@ -117,20 +126,19 @@ final class MixerViewModel {
         // Run `start()` on a background thread so the main run loop stays free
         // to receive and dispatch coreaudiod's reply.
         let engine = mixerEngine
-        Task.detached(priority: .userInitiated) { [weak self] in
+        engine.latencyMode = lowLatencyModeEnabled ? .low : .normal
+        Task.detached(priority: .userInitiated) {
             do {
                 try engine.start(inputs: inputs, output: output)
                 let isRunning = engine.isRunning
                 await MainActor.run {
                     logger.notice("✅ Engine started successfully, isRunning=\(isRunning, privacy: .public)")
-                    self?.saveConfiguration()
                 }
             } catch {
                 let desc = error.localizedDescription
                 await MainActor.run {
                     logger.error("❌ MixerEngine failed to start: \(error, privacy: .public)")
                     engine.lastError = desc
-                    self?.saveConfiguration()
                 }
             }
         }
@@ -178,7 +186,8 @@ final class MixerViewModel {
             },
             mainOutput: MixerConfiguration.OutputStripConfig(
                 deviceUID: mainOutput.selectedDevice.uid
-            )
+            ),
+            lowLatencyModeEnabled: lowLatencyModeEnabled
         )
         config.save()
     }
@@ -201,5 +210,6 @@ final class MixerViewModel {
         if let device = deviceManager.device(forUID: config.mainOutput.deviceUID) {
             mainOutput.selectedDevice = device
         }
+        lowLatencyModeEnabled = config.lowLatencyModeEnabled
     }
 }
