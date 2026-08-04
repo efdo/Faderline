@@ -268,7 +268,7 @@ final class DriftCompensatingReaderTests: XCTestCase {
 final class HALMixerEngineConfigTests: XCTestCase {
     func testEngineStartWithUnknownOutputIsNoop() throws {
         let engine = HALMixerEngine()
-        try engine.start(inputs: [], output: .init(deviceID: kAudioObjectUnknown))
+        try engine.start(inputs: [], output: .init())
         XCTAssertFalse(engine.isRunning)
         XCTAssertNil(engine.lastError)
         XCTAssertTrue(engine.inputLevels.isEmpty)
@@ -285,6 +285,63 @@ final class HALMixerEngineConfigTests: XCTestCase {
         let engine = HALMixerEngine()
         engine.setVolume(0.5, forInput: 0)
         engine.setRouteToMain(false, forInput: 1)
+        XCTAssertFalse(engine.isRunning)
+    }
+
+    // MARK: - Output routing resolution (pure, no real Core Audio devices touched)
+
+    func testRoutingWithNoDevicesConfigured() {
+        let (primary, monitor) = HALMixerEngine.resolveOutputRouting(.init())
+        XCTAssertEqual(primary, AudioDeviceID(kAudioObjectUnknown))
+        XCTAssertNil(monitor)
+    }
+
+    func testRoutingPrefersVirtualDeviceAsPrimaryWhenBothPresent() {
+        let (primary, monitor) = HALMixerEngine.resolveOutputRouting(
+            .init(virtualDeviceID: 42, monitorDeviceID: 7)
+        )
+        XCTAssertEqual(primary, 42, "the virtual microphone must always be the mix clock when present")
+        XCTAssertEqual(monitor, 7, "the selected hardware device becomes a secondary monitor")
+    }
+
+    func testRoutingFallsBackToMonitorDeviceAsPrimaryWhenNoVirtualDevice() {
+        let (primary, monitor) = HALMixerEngine.resolveOutputRouting(
+            .init(monitorDeviceID: 7)
+        )
+        XCTAssertEqual(primary, 7, "with no virtual driver installed, the selected hardware device must still play the mix directly")
+        XCTAssertNil(monitor, "there is nothing to fan out to when the monitor device IS the primary output")
+    }
+
+    func testRoutingWithOnlyVirtualDeviceHasNoMonitor() {
+        let (primary, monitor) = HALMixerEngine.resolveOutputRouting(
+            .init(virtualDeviceID: 42)
+        )
+        XCTAssertEqual(primary, 42)
+        XCTAssertNil(monitor, "monitoring is optional and must stay disabled unless a hardware device is selected")
+    }
+
+    // MARK: - Engine-level rollback with unreachable devices
+    //
+    // These use bogus AudioDeviceIDs that don't correspond to any real
+    // device. HALMixerEngine.start() queries the device's nominal sample
+    // rate before creating any AUHAL unit, so these exercise the failure
+    // and rollback path without touching real Core Audio hardware.
+
+    func testEngineStartThrowsAndRollsBackWhenPrimaryDeviceIsUnreachable() {
+        let engine = HALMixerEngine()
+        XCTAssertThrowsError(
+            try engine.start(inputs: [], output: .init(virtualDeviceID: 999_999))
+        )
+        XCTAssertFalse(engine.isRunning)
+        XCTAssertTrue(engine.inputLevels.isEmpty)
+        XCTAssertEqual(engine.outputLevel.left, 0)
+    }
+
+    func testEngineStartThrowsWhenHardwareFallbackDeviceIsUnreachable() {
+        let engine = HALMixerEngine()
+        XCTAssertThrowsError(
+            try engine.start(inputs: [], output: .init(monitorDeviceID: 999_999))
+        )
         XCTAssertFalse(engine.isRunning)
     }
 }

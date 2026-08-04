@@ -11,12 +11,24 @@ private let logger = Logger(subsystem: "com.audiomixer", category: "HALMixerEngi
 /// Signal path:
 /// ```
 /// per input device:  AUHAL input unit → ChannelRingBuffer (all hw channels)
-/// output device:     AUHAL output unit render callback:
+/// primary output:     AUHAL output unit render callback (the mix clock):
 ///                      per device: DriftCompensatingReader.pull
 ///                        (resamples to output rate + servo drift correction)
 ///                      per strip: channel map → volume (vDSP) → mix accumulate
 ///                      → RMS metering → planar stereo out
+///                      → (if monitoring) copy post-mix bus into a ring buffer
+/// monitor output:     independent AUHAL output unit render callback:
+///                      DriftCompensatingReader.pull from the post-mix ring
+///                      (resamples primary rate → monitor rate + drift correction)
 /// ```
+///
+/// The primary output is the AudioMixer virtual microphone device when the
+/// virtual driver is installed (so conferencing apps always get a live
+/// feed), or a directly-selected hardware device otherwise. Hardware
+/// monitoring, when enabled, is always a *secondary*, independently
+/// clocked output fed from the same post-mix bus — never the mix clock
+/// itself — so removing/losing the monitor device can never glitch the
+/// virtual microphone feed.
 ///
 /// Everything on the render path is pre-allocated at `start()`; volume and
 /// routing changes are atomic writes (no graph rebuild).
@@ -43,7 +55,20 @@ final class HALMixerEngine {
     }
 
     struct OutputConfig {
-        let deviceID: AudioDeviceID
+        /// The AudioMixer virtual microphone device, or `kAudioObjectUnknown`
+        /// if the virtual driver isn't installed/selected. When present,
+        /// this is always the primary output (the mix clock).
+        let virtualDeviceID: AudioDeviceID
+        /// A hardware device for monitoring the mix, or `kAudioObjectUnknown`
+        /// to disable monitoring. When `virtualDeviceID` is unknown, this
+        /// device is used directly as the primary output instead (hardware-only
+        /// fallback for when the virtual driver isn't installed).
+        let monitorDeviceID: AudioDeviceID
+
+        init(virtualDeviceID: AudioDeviceID = AudioDeviceID(kAudioObjectUnknown), monitorDeviceID: AudioDeviceID = AudioDeviceID(kAudioObjectUnknown)) {
+            self.virtualDeviceID = virtualDeviceID
+            self.monitorDeviceID = monitorDeviceID
+        }
     }
 
     // MARK: - Real-time state
@@ -105,15 +130,38 @@ final class HALMixerEngine {
         let strips: [StripSlot]
         let outLevelL = Atomic<Float>(0)
         let outLevelR = Atomic<Float>(0)
+        /// Post-mix bus fan-out to the monitor output, if monitoring is
+        /// active. `nil` when there is no secondary monitor device — in
+        /// that case the primary output IS the only consumer of the mix.
+        let postMixRing: ChannelRingBuffer?
+        /// 2-slot scratch reused every callback to avoid allocating an
+        /// array to satisfy `ChannelRingBuffer.write`'s pointer-table API.
+        let postMixPointers: UnsafeMutablePointer<UnsafePointer<Float>>?
 
-        init(devices: [DeviceSlot], strips: [StripSlot]) {
+        init(devices: [DeviceSlot], strips: [StripSlot], postMixRing: ChannelRingBuffer?) {
             self.devices = devices
             self.strips = strips
+            self.postMixRing = postMixRing
+            if let ring = postMixRing {
+                self.postMixPointers = .allocate(capacity: ring.channelCount)
+            } else {
+                self.postMixPointers = nil
+            }
+        }
+
+        deinit {
+            postMixPointers?.deallocate()
         }
     }
 
     @ObservationIgnored private var renderState: RenderState?
     @ObservationIgnored private var outputUnit: HALOutputUnit?
+    /// Independent secondary output feeding a physical monitor device from
+    /// the post-mix bus. `nil` when monitoring is disabled or the virtual
+    /// driver isn't installed (in which case `outputUnit` targets the
+    /// monitor device directly instead).
+    @ObservationIgnored private var monitorOutputUnit: HALOutputUnit?
+    @ObservationIgnored private var monitorReader: DriftCompensatingReader?
 
     private static let maxFrames = 4096
     private static let ringCapacity = 16384
@@ -158,24 +206,50 @@ final class HALMixerEngine {
         }.joined(separator: "\n")
         let outL = state.outLevelL.load(ordering: .relaxed)
         let outR = state.outLevelR.load(ordering: .relaxed)
-        return deviceLines + "\n" + levelLines + "\nout: L=\(String(format: "%.3f", outL)) R=\(String(format: "%.3f", outR))"
+        var result = deviceLines + "\n" + levelLines + "\nout: L=\(String(format: "%.3f", outL)) R=\(String(format: "%.3f", outR))"
+        if let ring = state.postMixRing, let reader = monitorReader {
+            result += "\nmonitor: fill=\(reader.fillLevel) ratio=\(String(format: "%.6f", reader.currentRatio)) " +
+                "underruns=\(ring.underrunCount) overruns=\(ring.overrunCount) starved=\(reader.starvedPullCount)"
+        }
+        return result
     }
 
     // MARK: - Lifecycle
+
+    /// Resolves which device is the primary output (the mix clock) and
+    /// which, if any, is a secondary hardware monitor fed from the post-mix
+    /// bus. The virtual microphone is always primary when present; the
+    /// monitor device becomes primary only as a hardware-only fallback when
+    /// there's no virtual device to feed. Pure and side-effect free so it
+    /// can be unit tested without touching real Core Audio devices.
+    static func resolveOutputRouting(_ output: OutputConfig) -> (primary: AudioDeviceID, monitor: AudioDeviceID?) {
+        guard output.virtualDeviceID != kAudioObjectUnknown else {
+            return (output.monitorDeviceID, nil)
+        }
+        let monitor = output.monitorDeviceID != kAudioObjectUnknown ? output.monitorDeviceID : nil
+        return (output.virtualDeviceID, monitor)
+    }
 
     func start(inputs: [InputConfig], output: OutputConfig) throws {
         stop()
         lastError = nil
         let targetFill = self.targetFill
 
-        log("start() — output=\(output.deviceID), \(inputs.count) inputs, latency=\(latencyMode.rawValue), targetFill=\(targetFill)")
+        // Primary output: the virtual microphone when installed/selected,
+        // otherwise the monitor device directly (hardware-only fallback).
+        // Monitoring is a secondary output only when the virtual device is
+        // primary; if there's no virtual device, "monitoring" IS the primary
+        // output, so there is nothing further to fan out to.
+        let (primaryDeviceID, secondaryMonitorDeviceID) = Self.resolveOutputRouting(output)
 
-        guard output.deviceID != kAudioObjectUnknown else {
+        log("start() — primary=\(primaryDeviceID), monitor=\(secondaryMonitorDeviceID.map(String.init) ?? "none"), \(inputs.count) inputs, latency=\(latencyMode.rawValue), targetFill=\(targetFill)")
+
+        guard primaryDeviceID != kAudioObjectUnknown else {
             log("⏭️ No output device, skipping")
             return
         }
 
-        let outputRate = HALDeviceInfo.nominalSampleRate(deviceID: output.deviceID)
+        let outputRate = HALDeviceInfo.nominalSampleRate(deviceID: primaryDeviceID)
         guard outputRate > 0 else {
             throw HALUnitError.osStatus("Output device sample rate is 0", -1)
         }
@@ -216,19 +290,26 @@ final class HALMixerEngine {
             }
         }
 
-        let state = RenderState(devices: devices, strips: strips)
+        // Post-mix fan-out ring, only allocated when there's a secondary
+        // monitor to feed. Prefilled with silence so the monitor's reader
+        // has a jitter cushion the instant it starts pulling.
+        let postMixRing: ChannelRingBuffer? = secondaryMonitorDeviceID != nil
+            ? ChannelRingBuffer(channelCount: 2, capacity: Self.ringCapacity) : nil
+        postMixRing?.prefillSilence(frames: targetFill)
+
+        let state = RenderState(devices: devices, strips: strips, postMixRing: postMixRing)
         self.renderState = state
 
         do {
-            // Output unit with the mix handler. The handler captures only `state`
-            // (a final class); all buffers inside are pre-allocated.
-            let outputUnit = try HALOutputUnit(deviceID: output.deviceID,
+            // Primary output unit with the mix handler. The handler captures
+            // only `state` (a final class); all buffers inside are pre-allocated.
+            let outputUnit = try HALOutputUnit(deviceID: primaryDeviceID,
                                                maxFrames: Self.maxFrames) { dest, frameCount in
                 HALMixerEngine.mix(state: state, dest: dest, frameCount: frameCount)
             }
             self.outputUnit = outputUnit
 
-            // Start inputs first so data is flowing, then the output.
+            // Start inputs first so data is flowing, then the primary output.
             for device in devices {
                 try device.inputUnit.start()
             }
@@ -240,10 +321,44 @@ final class HALMixerEngine {
         }
 
         isRunning = true
-        log("✅ Engine running (output rate \(outputRate) Hz)")
+        log("✅ Engine running (primary output rate \(outputRate) Hz)")
+
+        // Secondary monitor output: independently clocked, fed from the
+        // post-mix ring via its own drift-compensating reader. This is
+        // strictly best-effort — if the monitor device fails to start, the
+        // primary (virtual microphone) output keeps running unaffected.
+        if let monitorDeviceID = secondaryMonitorDeviceID, let ring = postMixRing {
+            do {
+                let monitorRate = HALDeviceInfo.nominalSampleRate(deviceID: monitorDeviceID)
+                guard monitorRate > 0 else {
+                    throw HALUnitError.osStatus("Monitor device sample rate is 0", -1)
+                }
+                let reader = DriftCompensatingReader(ring: ring,
+                                                     inputRate: outputRate,
+                                                     outputRate: monitorRate,
+                                                     targetFill: targetFill,
+                                                     maxQuantum: Self.maxFrames)
+                self.monitorReader = reader
+                let monitorOutputUnit = try HALOutputUnit(deviceID: monitorDeviceID,
+                                                          maxFrames: Self.maxFrames) { dest, frameCount in
+                    reader.pull(into: dest, frameCount: frameCount)
+                }
+                try monitorOutputUnit.start()
+                self.monitorOutputUnit = monitorOutputUnit
+                log("✅ Monitor output running (device \(monitorDeviceID), rate \(monitorRate) Hz)")
+            } catch {
+                log("⚠️ Monitor output failed to start, continuing without hardware monitoring: \(error)")
+                monitorOutputUnit?.stop()
+                monitorOutputUnit = nil
+                monitorReader = nil
+            }
+        }
     }
 
     func stop() {
+        monitorOutputUnit?.stop()
+        monitorOutputUnit = nil
+        monitorReader = nil
         outputUnit?.stop()
         outputUnit = nil
         if let state = renderState {
@@ -325,6 +440,16 @@ final class HALMixerEngine {
         vDSP_measqv(dest[1], 1, &msR, vDSP_Length(n))
         state.outLevelL.store(min(1, sqrt(msL) * 2), ordering: .relaxed)
         state.outLevelR.store(min(1, sqrt(msR) * 2), ordering: .relaxed)
+
+        // 4. Fan out the finished post-mix bus to the monitor ring, if a
+        // secondary monitor output is active. `postMixPointers` is
+        // pre-allocated scratch reused every callback — only pointer
+        // assignment happens here, no allocation.
+        if let ring = state.postMixRing, let pointers = state.postMixPointers {
+            pointers[0] = UnsafePointer(dest[0])
+            pointers[1] = UnsafePointer(dest[1])
+            ring.write(channelPointers: UnsafePointer(pointers), count: n)
+        }
     }
 
     // MARK: - Logging

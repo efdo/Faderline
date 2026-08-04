@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreAudio
 import OSLog
 
 private let logger = Logger(subsystem: "com.audiomixer", category: "MixerViewModel")
@@ -12,6 +13,7 @@ typealias ActiveMixerEngine = HALMixerEngine
 final class MixerViewModel {
     let deviceManager = DeviceManager()
     let mixerEngine = ActiveMixerEngine()
+    let virtualDriverManager = VirtualDriverManager()
 
     var inputStrips: [InputStripViewModel]
     var mainOutput: OutputStripViewModel
@@ -117,7 +119,10 @@ final class MixerViewModel {
                 routeToMain: strip.routeToMain
             )
         }
-        let output = ActiveMixerEngine.OutputConfig(deviceID: mainOutput.selectedDevice.id)
+        let output = ActiveMixerEngine.OutputConfig(
+            virtualDeviceID: virtualDriverManager.virtualDeviceID ?? AudioDeviceID(kAudioObjectUnknown),
+            monitorDeviceID: mainOutput.selectedDevice.id
+        )
         saveConfiguration()
 
         // `AudioComponentInstanceNew` (called deep inside `start()`) makes a
