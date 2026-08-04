@@ -10,6 +10,7 @@
 		04C9654D6D60DBC477AC4061 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 39D57BEEC09B946164534171 /* CoreFoundation.framework */; };
 		0785EAFC169348CC804FF0E9 /* MixerConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E58BE60E14A4286BF87CA4B /* MixerConfiguration.swift */; };
 		08C9425BE29343EDB0F61F65 /* MixerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1393959C9A64828BBAA5CE0 /* MixerWindow.swift */; };
+		0B92849A414B531CD380A90B /* VirtualMicPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DACA9C9FCB72BACDDB1BACDB /* VirtualMicPanelView.swift */; };
 		1B892DB6FB1A47E483A1D4BA /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 65C5BE9AB6024A4ABB16038B /* AudioToolbox.framework */; };
 		320FE31EC5AC739A4C802E1C /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 786DFE9EF3C24401AF9AB122 /* CoreAudio.framework */; };
 		3331B45357E8402EA5CB9227 /* LevelMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B9EBFBC9A441A48E22BE19 /* LevelMeter.swift */; };
@@ -77,6 +78,7 @@
 		B1393959C9A64828BBAA5CE0 /* MixerWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerWindow.swift; sourceTree = "<group>"; };
 		B6AB45228605457CA3832D74 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D7EEBBBFDAB44727A3FA09F6 /* DeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceManager.swift; sourceTree = "<group>"; };
+		DACA9C9FCB72BACDDB1BACDB /* VirtualMicPanelView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VirtualMicPanelView.swift; sourceTree = "<group>"; };
 		EA2E7CFFADEB38CCCDD6CE5E /* main.c */ = {isa = PBXFileReference; includeInIndex = 1; path = main.c; sourceTree = "<group>"; };
 		EEBF341B71494C3F86ABA377 /* MixerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerViewModel.swift; sourceTree = "<group>"; };
 		F5403B998E3947F488B23662 /* AudioDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDevice.swift; sourceTree = "<group>"; };
@@ -223,6 +225,7 @@
 				A1B2C3D4E5F60718293A4B10 /* MixerTheme.swift */,
 				8354BB0832FE45459065D883 /* OutputStripView.swift */,
 				216A2DD88A2A40A3AC8EB282 /* VUMeterView.swift */,
+				DACA9C9FCB72BACDDB1BACDB /* VirtualMicPanelView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -333,6 +336,7 @@
 				8E58769EA903459391395596 /* OutputStripView.swift in Sources */,
 				B0F9B84BE73F430696115552 /* VUMeterView.swift in Sources */,
 				626EA7D27A499F52AE0BB11F /* VirtualDriverManager.swift in Sources */,
+				0B92849A414B531CD380A90B /* VirtualMicPanelView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

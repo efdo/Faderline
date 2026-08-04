@@ -46,9 +46,10 @@ struct MixerWindow: View {
                     }
                 }
 
-                // Output strip
+                // Output strip + virtual microphone panel
                 VStack(spacing: 12) {
-                    OutputStripView(strip: viewModel.mainOutput)
+                    OutputStripView(strip: viewModel.monitorOutput)
+                    VirtualMicPanelView()
                     Spacer()
                 }
             }

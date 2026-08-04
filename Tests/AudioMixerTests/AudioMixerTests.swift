@@ -57,8 +57,9 @@ do {
 
     struct MixerConfiguration: Codable {
         var inputs: [InputStripConfig]
-        var mainOutput: OutputStripConfig
+        var monitorOutput: OutputStripConfig
         var lowLatencyModeEnabled: Bool
+        var monitoringEnabled: Bool
     }
 
     let config = MixerConfiguration(
@@ -66,8 +67,9 @@ do {
             InputStripConfig(deviceUID: "ssl2", leftChannelIndex: 0, rightChannelIndex: 1,
                              volume: 0.75, boostEnabled: true, routeToMain: true),
         ],
-        mainOutput: OutputStripConfig(deviceUID: "blackhole"),
-        lowLatencyModeEnabled: true
+        monitorOutput: OutputStripConfig(deviceUID: "blackhole"),
+        lowLatencyModeEnabled: true,
+        monitoringEnabled: false
     )
 
     let data = try JSONEncoder().encode(config)
@@ -77,8 +79,9 @@ do {
     assertEqual(decoded.inputs[0].deviceUID, "ssl2", "deviceUID")
     assertEqual(decoded.inputs[0].volume, 0.75, "volume")
     assert(decoded.inputs[0].boostEnabled, "boostEnabled")
-    assertEqual(decoded.mainOutput.deviceUID, "blackhole", "mainOutput deviceUID")
+    assertEqual(decoded.monitorOutput.deviceUID, "blackhole", "monitorOutput deviceUID")
     assert(decoded.lowLatencyModeEnabled, "lowLatencyModeEnabled")
+    assert(!decoded.monitoringEnabled, "monitoringEnabled")
 }
 
 // MARK: - Volume Boost Logic

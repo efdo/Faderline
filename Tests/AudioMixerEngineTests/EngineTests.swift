@@ -345,3 +345,35 @@ final class HALMixerEngineConfigTests: XCTestCase {
         XCTAssertFalse(engine.isRunning)
     }
 }
+
+final class MixerConfigurationMigrationTests: XCTestCase {
+    func testDecodesLegacyMainOutputKeyAsMonitorOutput() throws {
+        let legacyJSON = """
+        {
+          "inputs": [],
+          "mainOutput": { "deviceUID": "blackhole" },
+          "lowLatencyModeEnabled": true
+        }
+        """
+        let config = try JSONDecoder().decode(MixerConfiguration.self, from: Data(legacyJSON.utf8))
+        XCTAssertEqual(config.monitorOutput.deviceUID, "blackhole")
+        XCTAssertTrue(config.lowLatencyModeEnabled)
+        XCTAssertTrue(config.monitoringEnabled, "monitoring must default to on for pre-existing users")
+    }
+
+    func testRoundTripUsesMonitorOutputKey() throws {
+        let config = MixerConfiguration(
+            inputs: [],
+            monitorOutput: .init(deviceUID: "ssl2-out"),
+            monitoringEnabled: false
+        )
+        let data = try JSONEncoder().encode(config)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(json.contains("monitorOutput"))
+        XCTAssertFalse(json.contains("mainOutput"))
+
+        let decoded = try JSONDecoder().decode(MixerConfiguration.self, from: data)
+        XCTAssertEqual(decoded.monitorOutput.deviceUID, "ssl2-out")
+        XCTAssertFalse(decoded.monitoringEnabled)
+    }
+}

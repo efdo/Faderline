@@ -13,17 +13,26 @@ struct OutputStripView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(MixerTheme.textLabel)
 
+                Toggle("Monitoring", isOn: Binding(
+                    get: { viewModel.monitoringEnabled },
+                    set: { viewModel.setMonitoringEnabled($0) }
+                ))
+                .toggleStyle(.switch)
+                .font(.caption)
+                .foregroundStyle(MixerTheme.textLabel)
+
                 // Device picker
                 Picker("", selection: Binding(
                     get: { strip.selectedDevice },
-                    set: { viewModel.selectOutputDevice($0) }
+                    set: { viewModel.selectMonitorDevice($0) }
                 )) {
-                    Text("N/A").tag(AudioDevice.none)
-                    ForEach(viewModel.deviceManager.outputDevices) { device in
+                    Text("None").tag(AudioDevice.none)
+                    ForEach(viewModel.selectableMonitorDevices) { device in
                         Text(device.name).tag(device)
                     }
                 }
                 .labelsHidden()
+                .disabled(!viewModel.monitoringEnabled)
 
                 Toggle("Low latency", isOn: Binding(
                     get: { viewModel.lowLatencyModeEnabled },

@@ -19,7 +19,7 @@ struct InputStripView: View {
                     set: { viewModel.selectInputDevice($0, forStrip: strip) }
                 )) {
                     Text("N/A").tag(AudioDevice.none)
-                    ForEach(viewModel.deviceManager.inputDevices) { device in
+                    ForEach(viewModel.selectableInputDevices) { device in
                         Text(device.name).tag(device)
                     }
                 }
