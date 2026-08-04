@@ -1,0 +1,20 @@
+#!/bin/bash
+#
+# postinstall — the "uninstaller" is itself a package with no payload; its
+# postinstall script is where the actual removal happens. Runs as root via
+# Installer.app.
+#
+# Narrowly scoped: removes only the exact AudioMixer virtual driver bundle
+# path and restarts coreaudiod. Does not touch any other file.
+
+set -euo pipefail
+
+DRIVER_PATH="/Library/Audio/Plug-Ins/HAL/AudioMixerVirtualDriver.driver"
+
+if [ -d "$DRIVER_PATH" ]; then
+    rm -rf "$DRIVER_PATH"
+fi
+
+launchctl kickstart -k system/com.apple.audio.coreaudiod
+
+exit 0

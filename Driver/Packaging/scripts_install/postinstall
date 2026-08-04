@@ -1,0 +1,29 @@
+#!/bin/bash
+#
+# postinstall — runs as root via Installer.app once the package payload has
+# been copied to /Library/Audio/Plug-Ins/HAL/AudioMixerVirtualDriver.driver.
+#
+# Narrowly scoped: fixes ownership/permissions on the exact bundle path and
+# restarts coreaudiod so it picks up the new plug-in. Does not touch any
+# other path and takes no arguments from the app (Installer.app is the only
+# caller, and it does not pass untrusted input to this script).
+
+set -euo pipefail
+
+DRIVER_PATH="/Library/Audio/Plug-Ins/HAL/AudioMixerVirtualDriver.driver"
+
+if [ ! -d "$DRIVER_PATH" ]; then
+    echo "postinstall: expected driver bundle not found at $DRIVER_PATH" >&2
+    exit 1
+fi
+
+chown -R root:wheel "$DRIVER_PATH"
+find "$DRIVER_PATH" -type d -exec chmod 755 {} \;
+find "$DRIVER_PATH" -type f -exec chmod 644 {} \;
+chmod 755 "$DRIVER_PATH/Contents/MacOS/AudioMixerVirtualDriver"
+
+# Restarting coreaudiod (rather than a full reboot) is sufficient for it to
+# discover the new HAL plug-in; launchd immediately relaunches it.
+launchctl kickstart -k system/com.apple.audio.coreaudiod
+
+exit 0

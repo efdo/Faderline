@@ -15,6 +15,7 @@
 		3331B45357E8402EA5CB9227 /* LevelMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B9EBFBC9A441A48E22BE19 /* LevelMeter.swift */; };
 		3B817CC0D6164076A75C8536 /* InputStripViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFECB981EB745E6B8C6ADE2 /* InputStripViewModel.swift */; };
 		606ABCB6D34048B79BD313E0 /* AudioChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F27C3ABF1454B14BC384661 /* AudioChannel.swift */; };
+		626EA7D27A499F52AE0BB11F /* VirtualDriverManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4453F607AAFA6241A3F91742 /* VirtualDriverManager.swift */; };
 		64A65E15E1E14C8189302DB3 /* AudioDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5403B998E3947F488B23662 /* AudioDevice.swift */; };
 		67BB8DDEFF1B5E178323E14C /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 39D57BEEC09B946164534171 /* CoreFoundation.framework */; };
 		6F1EB81A98C14869B2826B8B /* MixerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEBF341B71494C3F86ABA377 /* MixerViewModel.swift */; };
@@ -57,6 +58,7 @@
 		39D57BEEC09B946164534171 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		405AFF3E93BD48F4A551AF21 /* AudioMixerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerApp.swift; sourceTree = "<group>"; };
 		42346062E9A64391AB989809 /* AudioMixer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AudioMixer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4453F607AAFA6241A3F91742 /* VirtualDriverManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VirtualDriverManager.swift; sourceTree = "<group>"; };
 		48BDDA6AAA3179374D105C96 /* AudioMixerVirtualDriver.c */ = {isa = PBXFileReference; includeInIndex = 1; path = AudioMixerVirtualDriver.c; sourceTree = "<group>"; };
 		5EBE19FD16D34CBF9121585B /* InputStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputStripView.swift; sourceTree = "<group>"; };
 		61930B8341B94C2782C35180 /* AudioMixer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AudioMixer.entitlements; sourceTree = "<group>"; };
@@ -177,6 +179,7 @@
 				A1B2C3D4E5F60718293A4B04 /* DriftCompensatingReader.swift */,
 				A1B2C3D4E5F60718293A4B06 /* HALAudioUnits.swift */,
 				A1B2C3D4E5F60718293A4B08 /* HALMixerEngine.swift */,
+				4453F607AAFA6241A3F91742 /* VirtualDriverManager.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -329,6 +332,7 @@
 				A1B2C3D4E5F60718293A4B09 /* MixerTheme.swift in Sources */,
 				8E58769EA903459391395596 /* OutputStripView.swift in Sources */,
 				B0F9B84BE73F430696115552 /* VUMeterView.swift in Sources */,
+				626EA7D27A499F52AE0BB11F /* VirtualDriverManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
