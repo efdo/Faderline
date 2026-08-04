@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>AudioMixerVirtualDriver</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.audiomixer.virtualdriver</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>AudioMixerVirtualDriver</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+
+	<!-- CFPlugIn factory declarations: map the AudioServerPlugIn type UUID
+	     to our factory function's UUID, and that UUID to the C entry point
+	     exported from AudioMixerVirtualDriver.c. -->
+	<key>CFPlugInFactories</key>
+	<dict>
+		<key>C475BEA4-CEE9-4FFB-978C-7B9BF5BDE51C</key>
+		<string>AudioMixerVirtualDriver_Create</string>
+	</dict>
+	<key>CFPlugInTypes</key>
+	<dict>
+		<key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
+		<array>
+			<string>C475BEA4-CEE9-4FFB-978C-7B9BF5BDE51C</string>
+		</array>
+	</dict>
+
+	<key>CFPlugInUnloadingEnabled</key>
+	<false/>
+</dict>
+</plist>
