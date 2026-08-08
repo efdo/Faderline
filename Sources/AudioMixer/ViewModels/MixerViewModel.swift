@@ -136,6 +136,21 @@ final class MixerViewModel {
         rebuildEngine()
     }
 
+    func setChannelMode(_ mode: InputStripViewModel.ChannelMode, forStrip strip: InputStripViewModel) {
+        switch mode {
+        case .mono1:
+            strip.leftChannelIndex = 0
+            strip.rightChannelIndex = 0
+        case .mono2:
+            strip.leftChannelIndex = min(1, max(0, strip.selectedDevice.inputChannelCount - 1))
+            strip.rightChannelIndex = min(1, max(0, strip.selectedDevice.inputChannelCount - 1))
+        case .stereo12:
+            strip.leftChannelIndex = 0
+            strip.rightChannelIndex = min(1, max(0, strip.selectedDevice.inputChannelCount - 1))
+        }
+        rebuildEngine()
+    }
+
     // MARK: - Engine management
 
     private func rebuildEngine() {

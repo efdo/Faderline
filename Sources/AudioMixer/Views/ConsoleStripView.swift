@@ -88,32 +88,22 @@ struct ConsoleStripView: View {
         switch kind {
         case .input(let strip):
             if strip.selectedDevice.id != AudioDevice.none.id {
-                HStack(spacing: 4) {
-                    channelPicker(strip: strip, selection: Binding(
-                        get: { strip.leftChannelIndex },
-                        set: { viewModel.setLeftChannel($0, forStrip: strip) }
-                    ))
-                    channelPicker(strip: strip, selection: Binding(
-                        get: { strip.rightChannelIndex },
-                        set: { viewModel.setRightChannel($0, forStrip: strip) }
-                    ))
+                Picker("", selection: Binding(
+                    get: { strip.channelMode },
+                    set: { viewModel.setChannelMode($0, forStrip: strip) }
+                )) {
+                    ForEach(strip.availableChannelModes) { mode in
+                        Text(mode.label).tag(mode)
+                    }
                 }
+                .labelsHidden()
+                .font(.system(size: 9))
             } else {
                 placeholderDash
             }
         case .main:
             placeholderDash
         }
-    }
-
-    private func channelPicker(strip: InputStripViewModel, selection: Binding<Int>) -> some View {
-        Picker("", selection: selection) {
-            ForEach(strip.availableChannels) { ch in
-                Text(ch.label).tag(ch.index)
-            }
-        }
-        .labelsHidden()
-        .font(.system(size: 9))
     }
 
     // MARK: - Output assign ("Main")

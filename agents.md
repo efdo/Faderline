@@ -34,6 +34,10 @@ xcodebuild -project AudioMixer.xcodeproj -scheme AudioMixer -configuration Debug
 ```
 
 **Always run all three verification steps after any non-trivial change.** The Xcode project and SPM package are both maintained; they must both build.
+After those checks, **launch the app once** to confirm the UI/runtime path still starts:
+```bash
+open /tmp/AudioMixer-Build/Build/Products/Debug/AudioMixer.app
+```
 
 ---
 

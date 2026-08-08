@@ -3,6 +3,22 @@ import SwiftUI
 /// ViewModel for a single input strip.
 @Observable
 final class InputStripViewModel: Identifiable {
+    enum ChannelMode: String, CaseIterable, Identifiable {
+        case mono1
+        case mono2
+        case stereo12
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .mono1: "1 (Mono)"
+            case .mono2: "2 (Mono)"
+            case .stereo12: "1 - 2 (Stereo)"
+            }
+        }
+    }
+
     let id: Int
     let label: String
 
@@ -36,6 +52,23 @@ final class InputStripViewModel: Identifiable {
     /// Available channels for the selected device.
     var availableChannels: [AudioChannel] {
         selectedDevice.inputChannels
+    }
+
+    var availableChannelModes: [ChannelMode] {
+        let count = selectedDevice.inputChannelCount
+        if count <= 0 { return [] }
+        if count == 1 { return [.mono1] }
+        return [.mono1, .mono2, .stereo12]
+    }
+
+    var channelMode: ChannelMode {
+        if leftChannelIndex == 0 && rightChannelIndex == 1 {
+            return .stereo12
+        }
+        if leftChannelIndex == 1 && rightChannelIndex == 1 {
+            return .mono2
+        }
+        return .mono1
     }
 
     init(id: Int, label: String) {
