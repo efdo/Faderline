@@ -71,7 +71,7 @@ enum MixerTheme {
     /// of its rows.
     enum Metrics {
         static let gutterWidth: CGFloat       = 90
-        static let stripWidth: CGFloat        = 96
+        static let stripWidth: CGFloat        = 115
         static let rowSpacing: CGFloat        = 6
         static let controlRowHeight: CGFloat  = 22
         static let panRowHeight: CGFloat      = 46
