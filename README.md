@@ -76,9 +76,10 @@ This replaces an earlier AVAudioEngine approach that produced crackling due to i
 
 ## For AI agents
 
-See [`agents.md`](agents.md) for architecture details, real-time safety rules, Xcode project maintenance, and the debug/diagnostic workflow.
+Use [`agents.md`](agents.md) as the **canonical, tool-agnostic** guide for all AI agents (Copilot, Claude, Cursor, and custom agents).
+
+If your agent supports provider-specific instruction files (for example, `.github/copilot-instructions.md`), those files should only point back to `agents.md` instead of duplicating guidance.
 
 ## License
 
 MIT
-

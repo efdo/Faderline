@@ -1,6 +1,9 @@
 # AudioMixer — Agent Guide
 
-This document is the first thing an AI agent should read before making changes to this project. It covers the architecture, real-time constraints, known history, gotchas, and workflows.
+This document is the first thing an AI agent should read before making changes to this project. It is the **canonical, tool-agnostic** guide for all agents (Copilot, Claude, Cursor, custom agents). It covers architecture, real-time constraints, known history, gotchas, and workflows.
+
+Any provider-specific instruction files in the repo should be thin pointers back
+to this document and should not duplicate or diverge from it.
 
 ---
 
