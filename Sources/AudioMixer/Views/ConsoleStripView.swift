@@ -66,6 +66,7 @@ struct ConsoleStripView: View {
             }
             .labelsHidden()
             .font(.system(size: 10))
+            .pickerStyle(.menu)
         case .main(let output):
             Picker("", selection: Binding(
                 get: { output.selectedDevice },
@@ -78,6 +79,7 @@ struct ConsoleStripView: View {
             }
             .labelsHidden()
             .font(.system(size: 10))
+            .pickerStyle(.menu)
         }
     }
 
@@ -98,6 +100,7 @@ struct ConsoleStripView: View {
                 }
                 .labelsHidden()
                 .font(.system(size: 9))
+                .pickerStyle(.menu)
             } else {
                 placeholderDash
             }
