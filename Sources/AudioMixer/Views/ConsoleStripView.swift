@@ -35,7 +35,7 @@ struct ConsoleStripView: View {
             row(.namePlate) { namePlateRow }
         }
         .padding(.vertical, 6)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 4)
         .frame(width: MixerTheme.Metrics.stripWidth)
         .background(isDimmed ? MixerTheme.stripDimmed : MixerTheme.stripBg)
         .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -65,8 +65,8 @@ struct ConsoleStripView: View {
                 }
             }
             .labelsHidden()
-            .font(.system(size: 10))
-            .pickerStyle(.menu)
+            .font(.system(size: 9))
+            .lineLimit(1)
         case .main(let output):
             Picker("", selection: Binding(
                 get: { output.selectedDevice },
@@ -78,8 +78,8 @@ struct ConsoleStripView: View {
                 }
             }
             .labelsHidden()
-            .font(.system(size: 10))
-            .pickerStyle(.menu)
+            .font(.system(size: 9))
+            .lineLimit(1)
         }
     }
 
@@ -99,8 +99,8 @@ struct ConsoleStripView: View {
                     }
                 }
                 .labelsHidden()
-                .font(.system(size: 9))
-                .pickerStyle(.menu)
+                .font(.system(size: 8))
+                .lineLimit(1)
             } else {
                 placeholderDash
             }
