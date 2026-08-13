@@ -18,6 +18,13 @@ final class MixerViewModel {
     var lowLatencyModeEnabled = false
 
     private var levelTimer: Timer?
+    private var inputMeterAnimationUntil: [Int: Date] = [:]
+    private var outputMeterAnimationUntil: Date = .distantPast
+
+    private static let meterPollInterval: TimeInterval = 1.0 / 15.0
+    private static let meterValueEpsilon: Float = 0.0005
+    private static let meterPeakAnimationDuration: TimeInterval = 1.5
+    private static let disableMetersDefaultsKey = "DisableMeters"
 
     init() {
         inputStrips = [
@@ -119,11 +126,11 @@ final class MixerViewModel {
     }
 
     func resetClip(forStrip strip: InputStripViewModel) {
-        strip.clipped = false
+        strip.meter.clipped = false
     }
 
     func resetOutputClip() {
-        mainOutput.clipped = false
+        mainOutput.meter.clipped = false
     }
 
     func setLeftChannel(_ index: Int, forStrip strip: InputStripViewModel) {
@@ -205,41 +212,69 @@ final class MixerViewModel {
     // MARK: - Level metering
 
     private func startLevelPolling() {
-        levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        levelTimer = Timer.scheduledTimer(withTimeInterval: Self.meterPollInterval, repeats: true) { [weak self] _ in
             guard let self else { return }
+            if UserDefaults.standard.bool(forKey: Self.disableMetersDefaultsKey) {
+                return
+            }
+            let meterTimestamp = Date()
             // Copy engine levels to view models
             let peaks = self.mixerEngine.inputPeaks
+            let inputLevels = self.mixerEngine.inputLevels
             for strip in self.inputStrips {
-                if let levels = self.mixerEngine.inputLevels[strip.id] {
-                    strip.levelLeft = levels.left
-                    strip.levelRight = levels.right
+                var changed = false
+                if let levels = inputLevels[strip.id] {
+                    changed = self.publish(levels.left, to: &strip.meter.levelLeft) || changed
+                    changed = self.publish(levels.right, to: &strip.meter.levelRight) || changed
                 } else {
-                    strip.levelLeft *= 0.9
-                    strip.levelRight *= 0.9
+                    changed = self.publish(strip.meter.levelLeft * 0.9, to: &strip.meter.levelLeft) || changed
+                    changed = self.publish(strip.meter.levelRight * 0.9, to: &strip.meter.levelRight) || changed
                 }
                 if let peak = peaks[strip.id] {
-                    strip.peakLeft = peak.left
-                    strip.peakRight = peak.right
+                    changed = self.publish(peak.left, to: &strip.meter.peakLeft) || changed
+                    changed = self.publish(peak.right, to: &strip.meter.peakRight) || changed
+                    if peak.left > Self.meterValueEpsilon || peak.right > Self.meterValueEpsilon {
+                        self.inputMeterAnimationUntil[strip.id] = meterTimestamp.addingTimeInterval(Self.meterPeakAnimationDuration)
+                    }
                     if peak.left >= 1.0 || peak.right >= 1.0 {
-                        strip.clipped = true
+                        strip.meter.clipped = true
                     }
                 }
+                if changed || meterTimestamp < self.inputMeterAnimationUntil[strip.id, default: .distantPast] {
+                    strip.meter.timestamp = meterTimestamp
+                }
             }
-            self.mainOutput.levelLeft = self.mixerEngine.outputLevel.left
-            self.mainOutput.levelRight = self.mixerEngine.outputLevel.right
+            var outputChanged = false
+            let outputLevel = self.mixerEngine.outputLevel
+            outputChanged = self.publish(outputLevel.left, to: &self.mainOutput.meter.levelLeft) || outputChanged
+            outputChanged = self.publish(outputLevel.right, to: &self.mainOutput.meter.levelRight) || outputChanged
             let outputPeak = self.mixerEngine.outputPeak
-            self.mainOutput.peakLeft = outputPeak.left
-            self.mainOutput.peakRight = outputPeak.right
+            outputChanged = self.publish(outputPeak.left, to: &self.mainOutput.meter.peakLeft) || outputChanged
+            outputChanged = self.publish(outputPeak.right, to: &self.mainOutput.meter.peakRight) || outputChanged
+            if outputPeak.left > Self.meterValueEpsilon || outputPeak.right > Self.meterValueEpsilon {
+                self.outputMeterAnimationUntil = meterTimestamp.addingTimeInterval(Self.meterPeakAnimationDuration)
+            }
             if outputPeak.left >= 1.0 || outputPeak.right >= 1.0 {
-                self.mainOutput.clipped = true
+                self.mainOutput.meter.clipped = true
+            }
+            if outputChanged || meterTimestamp < self.outputMeterAnimationUntil {
+                self.mainOutput.meter.timestamp = meterTimestamp
             }
         }
 
+        #if DEBUG
         // Log diagnostics every 3 seconds to help with debugging.
         Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             guard let self, self.mixerEngine.isRunning else { return }
             logger.info("diagnostics:\n\(self.mixerEngine.diagnostics, privacy: .public)")
         }
+        #endif
+    }
+
+    private func publish(_ newValue: Float, to currentValue: inout Float) -> Bool {
+        guard abs(newValue - currentValue) > Self.meterValueEpsilon else { return false }
+        currentValue = newValue
+        return true
     }
 
     // MARK: - Persistence

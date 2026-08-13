@@ -30,12 +30,18 @@ final class DriftCompensatingReader {
     /// Proportional gain: fraction of the (normalized) fill error applied
     /// per pull. Small = slow, stable convergence.
     private let gain = 0.02
+    /// Fill levels this close to target are already stable. Keeping correction
+    /// at exactly zero inside this band preserves the cheap 1:1 copy path for
+    /// same-rate devices instead of resampling forever for a few ppm.
+    private let fillDeadbandFrames = 64
+    private let maxSameRateSkipFrames = 8
 
     /// Scratch holding input frames for one quantum (per channel).
     private let scratch: [UnsafeMutablePointer<Float>]
     private let scratchCapacity: Int
 
     private(set) var starvedPullCount = 0
+    private(set) var skippedFrameCount = 0
 
     var currentRatio: Double { baseRatio * (1.0 + correction) }
     var fillLevel: Int { ring.readableFrames }
@@ -79,15 +85,38 @@ final class DriftCompensatingReader {
     func pull(into channelDest: UnsafePointer<UnsafeMutablePointer<Float>>, frameCount: Int) {
         precondition(frameCount * 2 >= 0)
 
+        let available = ring.readableFrames
+        guard frameCount > 0 else { return }
+
+        if baseRatio == 1.0, phase == 0, available >= frameCount {
+            let excess = available - targetFill - fillDeadbandFrames
+            if correction >= 0, excess >= 0 {
+                let skip = min(maxSameRateSkipFrames, max(1, excess / max(frameCount, 1)))
+                for c in 0..<ring.channelCount {
+                    _ = ring.peek(channel: c, into: channelDest[c], count: frameCount)
+                }
+                ring.advanceRead(by: frameCount + skip)
+                skippedFrameCount += skip
+                correction = 0
+                return
+            }
+
+            if abs(available - targetFill) <= fillDeadbandFrames {
+                for c in 0..<ring.channelCount {
+                    _ = ring.peek(channel: c, into: channelDest[c], count: frameCount)
+                }
+                ring.advanceRead(by: frameCount)
+                correction = 0
+                return
+            }
+        }
+
         updateServo()
         let ratio = currentRatio
 
         // Input frames needed to synthesize frameCount outputs from `phase`.
         let lastPos = phase + Double(frameCount - 1) * ratio
         let needed = Int(lastPos) + 2 // +1 for interp neighbor, +1 guard
-        let available = ring.readableFrames
-
-        guard frameCount > 0 else { return }
 
         if available < needed || needed > scratchCapacity {
             // Underrun: emit silence, consume nothing (data continuity resumes
@@ -129,7 +158,12 @@ final class DriftCompensatingReader {
     /// Proportional servo: nudge ratio toward holding `targetFill`.
     /// fill > target → consume faster (raise ratio); fill < target → slower.
     private func updateServo() {
-        let error = Double(ring.readableFrames - targetFill) / Double(max(targetFill, 1))
+        let fillErrorFrames = ring.readableFrames - targetFill
+        if abs(fillErrorFrames) <= fillDeadbandFrames {
+            correction = 0
+            return
+        }
+        let error = Double(fillErrorFrames) / Double(max(targetFill, 1))
         let desired = max(-1.0, min(1.0, error)) * maxCorrection
         correction += gain * (desired - correction)
     }
@@ -138,5 +172,6 @@ final class DriftCompensatingReader {
         phase = 0
         correction = 0
         starvedPullCount = 0
+        skippedFrameCount = 0
     }
 }

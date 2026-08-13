@@ -253,7 +253,7 @@ final class DriftCompensatingReaderTests: XCTestCase {
             next += 514
             _ = pull(reader, channels: 1, frames: 512)
         }
-        XCTAssertGreaterThan(reader.currentRatio, 1.0, "servo must speed up consumption when fill grows")
+        XCTAssertGreaterThan(reader.skippedFrameCount, 0, "same-rate fast path must skip frames when fill grows")
 
         // Now producer runs SLOW (510/512): ratio must fall below 1 eventually.
         for _ in 0..<800 {

@@ -153,6 +153,13 @@ final class HALMixerEngine {
     private static let ringCapacity = 16384
     private static let normalTargetFill = 2048
     private static let lowTargetFill = 1024
+    #if DEBUG
+    private static let machTimebase: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
+    #endif
 
     private var targetFill: Int {
         switch latencyMode {
@@ -208,9 +215,19 @@ final class HALMixerEngine {
     var diagnostics: String {
         guard let state = renderState else { return "engine stopped" }
         let deviceLines = state.devices.enumerated().map { i, dev in
-            "dev\(i): callbacks=\(dev.inputUnit.inputCallbackCount) fill=\(dev.reader.fillLevel) ratio=\(String(format: "%.6f", dev.reader.currentRatio)) " +
+            #if DEBUG
+            let inputCallbacks = dev.inputUnit.inputCallbackCount
+            let avgInputUS = Self.microseconds(
+                ticks: inputCallbacks > 0 ? dev.inputUnit.inputCallbackTicks / inputCallbacks : 0
+            )
+            let maxInputUS = Self.microseconds(ticks: dev.inputUnit.maxInputCallbackTicks)
+            let inputTiming = " inputAvgUS=\(String(format: "%.1f", avgInputUS)) inputMaxUS=\(String(format: "%.1f", maxInputUS))"
+            #else
+            let inputTiming = ""
+            #endif
+            return "dev\(i): callbacks=\(dev.inputUnit.inputCallbackCount) fill=\(dev.reader.fillLevel) ratio=\(String(format: "%.6f", dev.reader.currentRatio)) " +
             "underruns=\(dev.inputUnit.ring.underrunCount) overruns=\(dev.inputUnit.ring.overrunCount) " +
-            "starved=\(dev.reader.starvedPullCount)"
+            "starved=\(dev.reader.starvedPullCount) skipped=\(dev.reader.skippedFrameCount)" + inputTiming
         }.joined(separator: "\n")
         let levelLines = state.strips.map { strip in
             "strip[\(strip.stripIndex)]: L=\(String(format: "%.3f", strip.levelL.load(ordering: .relaxed))) R=\(String(format: "%.3f", strip.levelR.load(ordering: .relaxed))) " +
@@ -222,7 +239,24 @@ final class HALMixerEngine {
         let outR = state.outLevelR.load(ordering: .relaxed)
         let outPeakL = state.outPeakL.load(ordering: .relaxed)
         let outPeakR = state.outPeakR.load(ordering: .relaxed)
+        let outputDiagnostics: String
+        if let outputUnit {
+            #if DEBUG
+            let outputCallbacks = outputUnit.renderCallbackCount
+            let avgOutputUS = Self.microseconds(
+                ticks: outputCallbacks > 0 ? outputUnit.renderHandlerTicks / outputCallbacks : 0
+            )
+            let maxOutputUS = Self.microseconds(ticks: outputUnit.maxRenderHandlerTicks)
+            outputDiagnostics = "output: callbacks=\(outputCallbacks) lastFrames=\(outputUnit.lastRenderFrameCount) maxFrames=\(outputUnit.maxRenderFrameCount) " +
+                "mixAvgUS=\(String(format: "%.1f", avgOutputUS)) mixMaxUS=\(String(format: "%.1f", maxOutputUS))"
+            #else
+            outputDiagnostics = "output: callbacks=\(outputUnit.renderCallbackCount) lastFrames=\(outputUnit.lastRenderFrameCount) maxFrames=\(outputUnit.maxRenderFrameCount)"
+            #endif
+        } else {
+            outputDiagnostics = "output: stopped"
+        }
         return deviceLines + "\n" + levelLines +
+            "\n" + outputDiagnostics +
             "\nout: L=\(String(format: "%.3f", outL)) R=\(String(format: "%.3f", outR)) " +
             "peakL=\(String(format: "%.3f", outPeakL)) peakR=\(String(format: "%.3f", outPeakR)) " +
             "mute=\(state.outMute.load(ordering: .relaxed)) gain=\(String(format: "%.3f", state.outGain.load(ordering: .relaxed)))"
@@ -505,4 +539,11 @@ final class HALMixerEngine {
     private func log(_ message: String) {
         logger.info("\(message, privacy: .public)")
     }
+
+    #if DEBUG
+    private static func microseconds(ticks: Int) -> Double {
+        let nanos = Double(ticks) * Double(machTimebase.numer) / Double(machTimebase.denom)
+        return nanos / 1_000
+    }
+    #endif
 }

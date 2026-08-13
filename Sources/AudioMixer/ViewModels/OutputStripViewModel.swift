@@ -10,14 +10,7 @@ final class OutputStripViewModel: Identifiable {
     /// Master fader position in dB (see `FaderTaper`).
     var gainDB: Float = 0
     var muted: Bool = false
-
-    // Level metering (post-mix RMS; peak is measured pre-limiter).
-    var levelLeft: Float = 0
-    var levelRight: Float = 0
-    var peakLeft: Float = 0
-    var peakRight: Float = 0
-    /// Latched once a drained peak hits 0 dBFS; cleared by tapping the clip LED.
-    var clipped: Bool = false
+    let meter = MeterViewModel()
 
     /// Linear gain for the current fader position. See `FaderTaper`.
     var gain: Float { FaderTaper.gain(forDB: gainDB) }

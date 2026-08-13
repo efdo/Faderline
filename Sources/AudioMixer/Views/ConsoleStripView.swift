@@ -172,11 +172,7 @@ struct ConsoleStripView: View {
                 ))
                 ConsoleScaleView()
                 ChannelMeterView(
-                    levelLeft: strip.levelLeft,
-                    levelRight: strip.levelRight,
-                    peakLeft: strip.peakLeft,
-                    peakRight: strip.peakRight,
-                    clipped: strip.clipped,
+                    meter: strip.meter,
                     onResetClip: { viewModel.resetClip(forStrip: strip) }
                 )
             case .main(let output):
@@ -186,11 +182,7 @@ struct ConsoleStripView: View {
                 ))
                 ConsoleScaleView()
                 ChannelMeterView(
-                    levelLeft: output.levelLeft,
-                    levelRight: output.levelRight,
-                    peakLeft: output.peakLeft,
-                    peakRight: output.peakRight,
-                    clipped: output.clipped,
+                    meter: output.meter,
                     onResetClip: { viewModel.resetOutputClip() }
                 )
             }

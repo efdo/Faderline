@@ -1,8 +1,15 @@
 import SwiftUI
 import AVFoundation
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+}
+
 @main
 struct AudioMixerApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var mixerViewModel = MixerViewModel()
     @State private var micPermissionDenied = false
 

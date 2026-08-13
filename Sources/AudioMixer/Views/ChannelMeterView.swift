@@ -4,11 +4,7 @@ import SwiftUI
 /// scale (via `FaderTaper`), each with a peak-hold marker and gradient
 /// coloring, plus a clip indicator above that latches until tapped.
 struct ChannelMeterView: View {
-    let levelLeft: Float
-    let levelRight: Float
-    let peakLeft: Float
-    let peakRight: Float
-    let clipped: Bool
+    let meter: MeterViewModel
     let onResetClip: () -> Void
 
     @State private var heldLeft = PeakHold()
@@ -17,20 +13,18 @@ struct ChannelMeterView: View {
     var body: some View {
         VStack(spacing: 2) {
             clipIndicator
-            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
-                HStack(spacing: 2) {
-                    barView(level: levelLeft, displayPeak: heldLeft.displayValue(at: context.date))
-                    barView(level: levelRight, displayPeak: heldRight.displayValue(at: context.date))
-                }
+            HStack(spacing: 2) {
+                barView(level: meter.levelLeft, displayPeak: heldLeft.displayValue(at: meter.timestamp))
+                barView(level: meter.levelRight, displayPeak: heldRight.displayValue(at: meter.timestamp))
             }
         }
-        .onChange(of: peakLeft) { _, newValue in heldLeft.register(newValue) }
-        .onChange(of: peakRight) { _, newValue in heldRight.register(newValue) }
+        .onChange(of: meter.peakLeft) { _, newValue in heldLeft.register(newValue, at: meter.timestamp) }
+        .onChange(of: meter.peakRight) { _, newValue in heldRight.register(newValue, at: meter.timestamp) }
     }
 
     private var clipIndicator: some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(clipped ? MixerTheme.clipOn : MixerTheme.clipOff)
+            .fill(meter.clipped ? MixerTheme.clipOn : MixerTheme.clipOff)
             .frame(height: 6)
             .contentShape(Rectangle())
             .onTapGesture(perform: onResetClip)

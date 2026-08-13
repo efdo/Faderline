@@ -1,5 +1,19 @@
 import SwiftUI
 
+/// Fast-changing meter state kept separate from strip controls so level
+/// updates do not invalidate the whole channel strip.
+@Observable
+final class MeterViewModel {
+    var levelLeft: Float = 0
+    var levelRight: Float = 0
+    var peakLeft: Float = 0
+    var peakRight: Float = 0
+    /// Latched once a drained peak hits 0 dBFS; cleared by tapping the clip LED.
+    var clipped: Bool = false
+    /// Shared meter redraw timestamp, advanced by `MixerViewModel`'s polling timer.
+    var timestamp: Date = .now
+}
+
 /// ViewModel for a single input strip.
 @Observable
 final class InputStripViewModel: Identifiable {
@@ -32,16 +46,7 @@ final class InputStripViewModel: Identifiable {
     var muted: Bool = false
     var soloed: Bool = false
     var routeToMain: Bool = true
-
-    // Level metering (pre-fader/pre-pan/pre-route RMS, so it shows the raw
-    // source and still moves even when muted).
-    var levelLeft: Float = 0
-    var levelRight: Float = 0
-    // Peak-hold metering.
-    var peakLeft: Float = 0
-    var peakRight: Float = 0
-    /// Latched once a drained peak hits 0 dBFS; cleared by tapping the clip LED.
-    var clipped: Bool = false
+    let meter = MeterViewModel()
 
     /// Linear gain for the current fader position. See `FaderTaper`.
     var gain: Float { FaderTaper.gain(forDB: gainDB) }

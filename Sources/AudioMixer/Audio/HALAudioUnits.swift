@@ -87,6 +87,10 @@ final class HALInputUnit {
     private var context: InputContext?
 
     var inputCallbackCount: Int { context?.callbackCount.load(ordering: .relaxed) ?? 0 }
+    #if DEBUG
+    var inputCallbackTicks: Int { context?.callbackTicks.load(ordering: .relaxed) ?? 0 }
+    var maxInputCallbackTicks: Int { context?.maxCallbackTicks.load(ordering: .relaxed) ?? 0 }
+    #endif
 
     /// Real-time context handed to the C callback via inRefCon.
     /// Owns the render ABL and pointer table — allocated once, never resized.
@@ -98,6 +102,10 @@ final class HALInputUnit {
         let bufferList: UnsafeMutableAudioBufferListPointer
         let channelPointers: UnsafeMutablePointer<UnsafePointer<Float>>
         let callbackCount = Atomic<Int>(0)
+        #if DEBUG
+        let callbackTicks = Atomic<Int>(0)
+        let maxCallbackTicks = Atomic<Int>(0)
+        #endif
 
         init(ring: ChannelRingBuffer, channelCount: Int, maxFrames: Int) {
             self.ring = ring
@@ -235,6 +243,9 @@ private func halInputCallback(
     let ctx = Unmanaged<HALInputUnit.InputContext>.fromOpaque(inRefCon).takeUnretainedValue()
     let frames = Int(inNumberFrames)
     guard frames <= ctx.maxFrames else { return noErr }
+    #if DEBUG
+    let startTicks = mach_absolute_time()
+    #endif
 
     // Reset byte sizes (AudioUnitRender may shrink them on prior calls).
     for c in 0..<ctx.channelCount {
@@ -256,6 +267,13 @@ private func halInputCallback(
 
     ctx.ring.write(channelPointers: UnsafePointer(ctx.channelPointers), count: frames)
     ctx.callbackCount.wrappingAdd(1, ordering: .relaxed)
+    #if DEBUG
+    let elapsedTicks = Int(mach_absolute_time() - startTicks)
+    ctx.callbackTicks.wrappingAdd(elapsedTicks, ordering: .relaxed)
+    if elapsedTicks > ctx.maxCallbackTicks.load(ordering: .relaxed) {
+        ctx.maxCallbackTicks.store(elapsedTicks, ordering: .relaxed)
+    }
+    #endif
     return noErr
 }
 
@@ -280,6 +298,13 @@ final class HALOutputUnit {
         let channelCount: Int
         let handler: MixHandler
         let dest: UnsafeMutablePointer<UnsafeMutablePointer<Float>>
+        let callbackCount = Atomic<Int>(0)
+        let lastFrameCount = Atomic<Int>(0)
+        let maxFrameCount = Atomic<Int>(0)
+        #if DEBUG
+        let handlerTicks = Atomic<Int>(0)
+        let maxHandlerTicks = Atomic<Int>(0)
+        #endif
 
         init(channelCount: Int, handler: @escaping MixHandler) {
             self.channelCount = channelCount
@@ -351,6 +376,14 @@ final class HALOutputUnit {
         try check(AudioUnitInitialize(au), "AudioUnitInitialize(output)")
     }
 
+    var renderCallbackCount: Int { context?.callbackCount.load(ordering: .relaxed) ?? 0 }
+    var lastRenderFrameCount: Int { context?.lastFrameCount.load(ordering: .relaxed) ?? 0 }
+    var maxRenderFrameCount: Int { context?.maxFrameCount.load(ordering: .relaxed) ?? 0 }
+    #if DEBUG
+    var renderHandlerTicks: Int { context?.handlerTicks.load(ordering: .relaxed) ?? 0 }
+    var maxRenderHandlerTicks: Int { context?.maxHandlerTicks.load(ordering: .relaxed) ?? 0 }
+    #endif
+
     func start() throws {
         guard let au = audioUnit else { return }
         try check(AudioOutputUnitStart(au), "AudioOutputUnitStart(output)")
@@ -383,6 +416,11 @@ private func halOutputRenderCallback(
     let ctx = Unmanaged<HALOutputUnit.RenderContext>.fromOpaque(inRefCon).takeUnretainedValue()
     let abl = UnsafeMutableAudioBufferListPointer(ioData)
     let frames = Int(inNumberFrames)
+    ctx.callbackCount.wrappingAdd(1, ordering: .relaxed)
+    ctx.lastFrameCount.store(frames, ordering: .relaxed)
+    if frames > ctx.maxFrameCount.load(ordering: .relaxed) {
+        ctx.maxFrameCount.store(frames, ordering: .relaxed)
+    }
     let buffers = min(abl.count, ctx.channelCount)
     guard buffers == ctx.channelCount else {
         for b in 0..<abl.count {
@@ -396,6 +434,16 @@ private func halOutputRenderCallback(
         ctx.dest[c] = data.assumingMemoryBound(to: Float.self)
     }
 
+    #if DEBUG
+    let startTicks = mach_absolute_time()
+    #endif
     ctx.handler(UnsafePointer(ctx.dest), frames)
+    #if DEBUG
+    let elapsedTicks = Int(mach_absolute_time() - startTicks)
+    ctx.handlerTicks.wrappingAdd(elapsedTicks, ordering: .relaxed)
+    if elapsedTicks > ctx.maxHandlerTicks.load(ordering: .relaxed) {
+        ctx.maxHandlerTicks.store(elapsedTicks, ordering: .relaxed)
+    }
+    #endif
     return noErr
 }
