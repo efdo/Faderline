@@ -75,6 +75,13 @@ This replaces an earlier AVAudioEngine approach that produced crackling due to i
 | Architecture | MVVM with @Observable |
 | Persistence | UserDefaults + Codable JSON |
 
+## Releasing
+
+Signed, notarized `.pkg` installers are built automatically by
+[`.github/workflows/release.yml`](.github/workflows/release.yml) whenever a
+GitHub Release is published. See [`docs/RELEASING.md`](docs/RELEASING.md) for
+the required secrets and the full procedure.
+
 ## For AI agents
 
 Use [`agents.md`](agents.md) as the **canonical, tool-agnostic** guide for all AI agents (Copilot, Claude, Cursor, and custom agents).
