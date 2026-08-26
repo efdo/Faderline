@@ -1,15 +1,16 @@
-# AudioMixer
+# Faderline
 
-A native ARM64 macOS audio mixer — a modern replacement for [LadioCast](https://apps.apple.com/us/app/ladiocast/id411213048), which is Intel-only and will break when Rosetta 2 is removed.
+A native ARM64 macOS audio mixer built with SwiftUI and CoreAudio for low-latency local routing and monitoring.
 
 ## Features
 
-- **2 input channels** (expandable by design) — select any audio input device and specific L/R channels
-- **1 main output** (expandable by design) — route mixed audio to any output device
-- **Per-input volume** with +6 dB boost toggle
-- **Real-time VU meters** on inputs and output
-- **Device hot-plug** — automatically detects connect/disconnect
-- **Persistent configuration** — remembers device selections and volumes across launches
+- **2-channel input mixing** (expandable by design) — select any audio input device and map specific hardware channels to the mixer
+- **Configurable main output** — route the mixed signal to any available output device
+- **dB-calibrated faders** — per-input and master level control from silence up to +6 dB
+- **Pan, mute, and solo** — shape and isolate sources without rebuilding the engine
+- **Real-time metering** — input/output RMS meters with peak-hold and clip indication
+- **Device hot-plug** — detects audio device connect/disconnect events
+- **Persistent configuration** — remembers device selections and mix settings across launches
 - **Drift-compensated resampling** — handles 44.1 ↔ 48 kHz conversion and long-run clock drift without clicks
 
 ## Requirements
@@ -24,26 +25,26 @@ A native ARM64 macOS audio mixer — a modern replacement for [LadioCast](https:
 
 ```bash
 swift build
-swift run AudioMixer
+swift run Faderline
 ```
 
 ### Xcode
 
-Open `AudioMixer.xcodeproj`, select the AudioMixer scheme, press ⌘R.
+Open `Faderline.xcodeproj`, select the Faderline scheme, press ⌘R.
 
 > Full Xcode required (not just Command Line Tools).
 
 ## Architecture
 
 ```
-Sources/AudioMixer/
-├── AudioMixerApp.swift            # App entry + microphone permission request
+Sources/Faderline/
+├── FaderlineApp.swift            # App entry + microphone permission request
 ├── Models/                        # Data models (Codable persistence)
 ├── Audio/
 │   ├── ChannelRingBuffer.swift    # Lock-free SPSC ring buffer (atomics, real-time safe)
 │   ├── DriftCompensatingReader.swift  # Servo-tuned resampler (handles clock drift)
 │   ├── HALAudioUnits.swift        # Raw AUHAL input/output unit wrappers
-│   ├── HALMixerEngine.swift       # Active mixing engine (LadioCast-style AUHAL path)
+│   ├── HALMixerEngine.swift       # Active AUHAL-based mixing engine
 │   └── DeviceManager.swift        # CoreAudio HAL device enumeration + hot-plug
 ├── ViewModels/                    # MVVM (@Observable)
 └── Views/                         # SwiftUI — all colors in MixerTheme.swift
@@ -61,7 +62,7 @@ Input device (e.g. SSL 2)
   → Output device (BlackHole / speakers)
 ```
 
-This replaces an earlier AVAudioEngine approach that produced crackling due to independent clock domains. The AUHAL engine mirrors the architecture of LadioCast (AUGraph + circular buffers + explicit render callbacks).
+This replaces an earlier AVAudioEngine approach that produced crackling due to independent clock domains. The active engine uses AUHAL with explicit render callbacks, circular buffering, and drift-compensated reading to keep capture and output synchronized.
 
 ## Technology
 
@@ -80,6 +81,10 @@ Use [`agents.md`](agents.md) as the **canonical, tool-agnostic** guide for all A
 
 If your agent supports provider-specific instruction files (for example, `.github/copilot-instructions.md`), those files should only point back to `agents.md` instead of duplicating guidance.
 
+## Contributing
+
+Contributions are welcome, but this project is still tuned around real hardware validation on macOS. Start with the build and test commands above, read [`agents.md`](agents.md) for repository-specific constraints, and expect manual audio-device testing to remain important for changes near the engine or device-management path.
+
 ## License
 
-MIT
+Licensed under the MIT License. See [`LICENSE`](LICENSE).
