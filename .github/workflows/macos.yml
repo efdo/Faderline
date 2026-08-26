@@ -6,6 +6,8 @@ on:
 
 jobs:
   build-and-test:
+    permissions:
+      contents: read
     runs-on: macos-15
 
     steps:
