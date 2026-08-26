@@ -61,9 +61,9 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           security import "$APPLICATION_CERT_PATH" -P "$APPLICATION_CERTIFICATE_PASSWORD" -A \
-            -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+            -f pkcs12 -k "$KEYCHAIN_PATH"
           security import "$INSTALLER_CERT_PATH" -P "$INSTALLER_CERTIFICATE_PASSWORD" -A \
-            -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+            -f pkcs12 -k "$KEYCHAIN_PATH"
 
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
