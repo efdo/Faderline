@@ -22,6 +22,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          fetch-tags: true
 
       - name: Resolve release tag and version
         id: version
@@ -50,8 +53,8 @@ jobs:
           APPLICATION_CERT_PATH="$RUNNER_TEMP/developer_id_application.p12"
           INSTALLER_CERT_PATH="$RUNNER_TEMP/developer_id_installer.p12"
 
-          echo -n "$APPLICATION_CERTIFICATE_P12" | base64 --decode -o "$APPLICATION_CERT_PATH"
-          echo -n "$INSTALLER_CERTIFICATE_P12" | base64 --decode -o "$INSTALLER_CERT_PATH"
+          printf '%s' "$APPLICATION_CERTIFICATE_P12" | base64 -D -o "$APPLICATION_CERT_PATH"
+          printf '%s' "$INSTALLER_CERTIFICATE_P12" | base64 -D -o "$INSTALLER_CERT_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -62,7 +65,7 @@ jobs:
           security import "$INSTALLER_CERT_PATH" -P "$INSTALLER_CERTIFICATE_PASSWORD" -A \
             -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
 
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           EXISTING_KEYCHAINS=$(security list-keychains -d user | sed 's/[[:space:]]*"\(.*\)"[[:space:]]*/\1/')
           security list-keychains -d user -s "$KEYCHAIN_PATH" $EXISTING_KEYCHAINS
