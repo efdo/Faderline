@@ -138,7 +138,7 @@ final class DeviceManager {
         )
 
         var dataSize: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &dataSize) == noErr else { return 0 }
+guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &dataSize) == noErr, dataSize > 0 else { return 0 }
 
         let bufferListPointer = UnsafeMutableRawPointer.allocate(
             byteCount: Int(dataSize),
