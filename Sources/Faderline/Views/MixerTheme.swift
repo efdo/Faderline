@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Central color palette for the AudioMixer console UI.
+/// Central color palette for the Faderline console UI.
 /// Surfaces and text use NSColor semantic system colors so they adapt
 /// automatically to light and dark mode. Signal colors (meter/mute/solo/clip)
 /// are fixed RGB, matching professional console convention rather than

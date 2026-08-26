@@ -1,7 +1,7 @@
 import SwiftUI
 import OSLog
 
-private let logger = Logger(subsystem: "com.audiomixer", category: "MixerViewModel")
+private let logger = Logger(subsystem: "com.faderline", category: "MixerViewModel")
 
 /// The engine implementation in use. Switch back to `LegacyMixerEngine`
 /// (AVAudioEngine-based) here for A/B comparison during hardware testing.

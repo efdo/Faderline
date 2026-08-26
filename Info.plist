@@ -21,7 +21,7 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>AudioMixer needs microphone access to capture audio input devices.</string>
+	<string>Faderline needs microphone access to capture audio input devices.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

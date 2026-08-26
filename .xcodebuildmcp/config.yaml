@@ -11,5 +11,5 @@ setupPreferences:
   platforms:
     - macOS
 sessionDefaults:
-  projectPath: AudioMixer.xcodeproj
-  scheme: AudioMixer
+  projectPath: Faderline.xcodeproj
+  scheme: Faderline

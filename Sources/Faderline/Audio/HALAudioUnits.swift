@@ -4,7 +4,7 @@ import CoreAudio
 import Synchronization
 import OSLog
 
-private let halLogger = Logger(subsystem: "com.audiomixer", category: "HALAudioUnits")
+private let halLogger = Logger(subsystem: "com.faderline", category: "HALAudioUnits")
 
 /// Errors from the AUHAL layer.
 enum HALUnitError: Error, LocalizedError {

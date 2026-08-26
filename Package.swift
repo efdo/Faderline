@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "AudioMixer",
+    name: "Faderline",
     platforms: [.macOS(.v15)],
     targets: [
         .executableTarget(
-            name: "AudioMixer",
-            path: "Sources/AudioMixer",
+            name: "Faderline",
+            path: "Sources/Faderline",
             swiftSettings: [
                 .swiftLanguageMode(.v5)
             ],
@@ -18,9 +18,9 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "AudioMixerEngineTests",
-            dependencies: ["AudioMixer"],
-            path: "Tests/AudioMixerEngineTests",
+            name: "FaderlineEngineTests",
+            dependencies: ["Faderline"],
+            path: "Tests/FaderlineEngineTests",
             swiftSettings: [
                 .swiftLanguageMode(.v5)
             ]

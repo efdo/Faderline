@@ -5,20 +5,20 @@
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:efdo-improved-dollop}",
-            "name": "Debug AudioMixer",
-            "target": "AudioMixer",
+            "name": "Debug Faderline",
+            "target": "Faderline",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug AudioMixer"
+            "preLaunchTask": "swift: Build Debug Faderline"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:efdo-improved-dollop}",
-            "name": "Release AudioMixer",
-            "target": "AudioMixer",
+            "name": "Release Faderline",
+            "target": "Faderline",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release AudioMixer"
+            "preLaunchTask": "swift: Build Release Faderline"
         }
     ]
 }

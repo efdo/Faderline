@@ -1,4 +1,4 @@
-# AudioMixer — Agent Guide
+# Faderline — Agent Guide
 
 This document is the first thing an AI agent should read before making changes to this project. It is the **canonical, tool-agnostic** guide for all agents (Copilot, Claude, Cursor, custom agents). It covers architecture, real-time constraints, known history, gotchas, and workflows.
 
@@ -24,19 +24,19 @@ A native ARM64 macOS audio mixer (LadioCast replacement) built with Swift/SwiftU
 swift build
 
 # Run standalone legacy tests (no XCTest, just swift script)
-swift Tests/AudioMixerTests/AudioMixerTests.swift
+swift Tests/FaderlineTests/FaderlineTests.swift
 
 # Run SPM test target (real XCTest, covers engine internals)
 swift test
 
 # Full Xcode build (needed to check pbxproj consistency)
-xcodebuild -project AudioMixer.xcodeproj -scheme AudioMixer -configuration Debug build
+xcodebuild -project Faderline.xcodeproj -scheme Faderline -configuration Debug build
 ```
 
 **Always run all three verification steps after any non-trivial change.** The Xcode project and SPM package are both maintained; they must both build.
 After those checks, **launch the app once** to confirm the UI/runtime path still starts:
 ```bash
-open /tmp/AudioMixer-Build/Build/Products/Debug/AudioMixer.app
+open /tmp/Faderline-Build/Build/Products/Debug/Faderline.app
 ```
 
 ---
@@ -44,8 +44,8 @@ open /tmp/AudioMixer-Build/Build/Products/Debug/AudioMixer.app
 ## Project layout
 
 ```
-Sources/AudioMixer/
-├── AudioMixerApp.swift            # @main SwiftUI entry point; requests mic permission
+Sources/Faderline/
+├── FaderlineApp.swift            # @main SwiftUI entry point; requests mic permission
 ├── Models/
 │   ├── AudioDevice.swift          # CoreAudio device ID + metadata wrapper
 │   ├── AudioChannel.swift         # Channel descriptor (index, label)
@@ -72,8 +72,8 @@ Sources/AudioMixer/
     └── ChannelMeterView.swift     # Vertical stereo meter: peak-hold marker + clip latch
 
 Tests/
-├── AudioMixerTests/AudioMixerTests.swift      # ~21 standalone tests (run via swift script)
-└── AudioMixerEngineTests/EngineTests.swift    # ~39 XCTest tests: ring buffer, resampler, fader taper, config migration
+├── FaderlineTests/FaderlineTests.swift      # ~21 standalone tests (run via swift script)
+└── FaderlineEngineTests/EngineTests.swift    # ~39 XCTest tests: ring buffer, resampler, fader taper, config migration
 ```
 
 ---
@@ -137,7 +137,7 @@ gain from `FaderTaper.gain(forDB:)`**, not the old 0...1 slider value.
 
 Every 3 seconds while running, the Xcode console prints:
 ```
-[AudioMixer diagnostics]
+[Faderline diagnostics]
 dev0: callbacks=144 fill=2048 ratio=1.000000 underruns=0 overruns=0 starved=0
 ```
 - `callbacks=0` → AUHAL input not firing (permission denied or wrong device)
@@ -207,7 +207,7 @@ main output) aligned against a left-hand row-label gutter
 
 ## Xcode project maintenance
 
-The Xcode project (`AudioMixer.xcodeproj/project.pbxproj`) is maintained **in addition to** `Package.swift`. When you add a new `.swift` file, you must add it to both:
+The Xcode project (`Faderline.xcodeproj/project.pbxproj`) is maintained **in addition to** `Package.swift`. When you add a new `.swift` file, you must add it to both:
 
 1. **SPM** — SPM discovers files automatically by path; just place the file.
 2. **Xcode pbxproj** — requires two entries each: a `PBXFileReference` and a `PBXBuildFile`, plus membership in the correct group and the `Sources` build phase. Use the Python script pattern from the commit history, or add via Xcode UI and commit the change.
@@ -245,7 +245,7 @@ Before removing `LegacyMixerEngine`:
 7. Drive a strip hot enough to clip — the clip LED above its meter should latch; click it to reset.
 8. Hot-unplug SSL 2 — app should handle gracefully (error banner or re-enumerate).
 9. **10-minute soak** — sustained audio with no clicks, pops, or crackling.
-10. Check `[AudioMixer diagnostics]` in console: `underruns` and `starved` should stay at 0 or near-zero over the soak.
+10. Check `[Faderline diagnostics]` in console: `underruns` and `starved` should stay at 0 or near-zero over the soak.
 
 ---
 
@@ -259,9 +259,9 @@ Before removing `LegacyMixerEngine`:
 
 ## Known gotchas (hard-won — read before touching the engine)
 
-### 1. Never SIGKILL AudioMixer while the engine is running
+### 1. Never SIGKILL Faderline while the engine is running
 
-Using `kill -9 <pid>` or `pkill -9 AudioMixer` skips Swift's `deinit` and
+Using `kill -9 <pid>` or `pkill -9 Faderline` skips Swift's `deinit` and
 AppKit's `applicationWillTerminate`. CoreAudio's HAL (`coreaudiod`) never
 receives `AudioComponentInstanceDispose` / `AudioOutputUnitStop` for our
 AUHAL units, so it accumulates **orphaned IOProc registrations** for the SSL 2
@@ -271,7 +271,7 @@ On the next launch, `AudioComponentInstanceNew` tries to register a new IOProc
 for the same device. CoreaudioD accepts the Mach IPC message but **never
 replies** — the calling thread blocks forever on `mach_msg2_trap`.
 
-**Fix already in place:** `AudioMixerApp` listens for
+**Fix already in place:** `FaderlineApp` listens for
 `NSApplication.willTerminateNotification` and calls `MixerViewModel.stopEngine()`
 before exit. AppKit routes `SIGTERM` (the default `kill <pid>`) through
 `applicationWillTerminate`, so a normal kill is safe.
@@ -289,7 +289,7 @@ Wait ~3 s for coreaudiod to restart, then relaunch the app.
 `AudioComponentInstanceNew` (inside `HALInputUnit.init`) makes a synchronous
 Mach IPC call to coreaudiod. CoreaudioD's reply must be dispatched on the **main
 run loop**. If `start()` is called from the main thread (e.g. directly in
-`AudioMixerApp.init` → `MixerViewModel.init`), the main run loop is busy and
+`FaderlineApp.init` → `MixerViewModel.init`), the main run loop is busy and
 the reply can never be delivered → infinite deadlock.
 
 **Fix already in place:** `MixerViewModel.rebuildEngine()` runs
@@ -315,7 +315,7 @@ Consequences:
   from HAL proxy operations — this is **non-fatal** and comes from the system's
   output path, not our code.
 - When running diagnostics, `HALC_ShellObject::SetPropertyData failed` messages
-  are expected noise; focus on our subsystem logs (`subsystem == "com.audiomixer"`).
+  are expected noise; focus on our subsystem logs (`subsystem == "com.faderline"`).
 
 ---
 
@@ -325,12 +325,12 @@ All runtime log messages use `logger.info(...)` or higher. The `log show`
 default only shows `.default` and above, which omits `.info`. Always use:
 
 ```bash
-log show --predicate 'subsystem == "com.audiomixer"' --info --last 30s
+log show --predicate 'subsystem == "com.faderline"' --info --last 30s
 ```
 
 Or for live streaming while the app is open:
 ```bash
-log stream --predicate 'subsystem == "com.audiomixer"' --level info
+log stream --predicate 'subsystem == "com.faderline"' --level info
 ```
 
 Without `--info`, you will see **zero log lines** and assume the engine is silent.
