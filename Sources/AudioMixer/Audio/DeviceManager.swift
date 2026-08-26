@@ -140,12 +140,15 @@ final class DeviceManager {
         var dataSize: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &dataSize) == noErr else { return 0 }
 
-        let bufferListPointer = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: Int(dataSize))
-        defer { bufferListPointer.deallocate() }
+        let raw = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(dataSize),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { raw.deallocate() }
 
-        guard AudioObjectGetPropertyData(id, &address, 0, nil, &dataSize, bufferListPointer) == noErr else { return 0 }
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &dataSize, raw) == noErr else { return 0 }
 
-        let bufferList = UnsafeMutableAudioBufferListPointer(bufferListPointer)
+        let bufferList = UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self))
         return bufferList.reduce(0) { $0 + Int($1.mNumberChannels) }
     }
 
