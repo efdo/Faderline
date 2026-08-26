@@ -30,7 +30,7 @@
 		A86BAAAF64A3430BA1E00F4D /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 89C84597706C4D16AE115BAD /* AVFoundation.framework */; };
 		B152648A277941A79F057A42 /* DeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7EEBBBFDAB44727A3FA09F6 /* DeviceManager.swift */; };
 		C7488D1ED7714BA5A0011C05 /* OutputStripViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F0A8636F1AD435288543AB8 /* OutputStripViewModel.swift */; };
-		D4969B645F9042EC87368959 /* AudioMixerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 405AFF3E93BD48F4A551AF21 /* AudioMixerApp.swift */; };
+		D4969B645F9042EC87368959 /* FaderlineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 405AFF3E93BD48F4A551AF21 /* FaderlineApp.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,9 +39,9 @@
 		18B9EBFBC9A441A48E22BE19 /* LevelMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelMeter.swift; sourceTree = "<group>"; };
 		1E58BE60E14A4286BF87CA4B /* MixerConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerConfiguration.swift; sourceTree = "<group>"; };
 		2F0A8636F1AD435288543AB8 /* OutputStripViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputStripViewModel.swift; sourceTree = "<group>"; };
-		405AFF3E93BD48F4A551AF21 /* AudioMixerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerApp.swift; sourceTree = "<group>"; };
-		42346062E9A64391AB989809 /* AudioMixer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AudioMixer.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		61930B8341B94C2782C35180 /* AudioMixer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AudioMixer.entitlements; sourceTree = "<group>"; };
+		405AFF3E93BD48F4A551AF21 /* FaderlineApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaderlineApp.swift; sourceTree = "<group>"; };
+		42346062E9A64391AB989809 /* Faderline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Faderline.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		61930B8341B94C2782C35180 /* Faderline.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Faderline.entitlements; sourceTree = "<group>"; };
 		65C5BE9AB6024A4ABB16038B /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		786DFE9EF3C24401AF9AB122 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		89C84597706C4D16AE115BAD /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
@@ -80,9 +80,9 @@
 		0832017461FD45D9B339755F = {
 			isa = PBXGroup;
 			children = (
-				B2EFCEC02DA24971BB83E901 /* Sources/AudioMixer */,
+				B2EFCEC02DA24971BB83E901 /* Sources/Faderline */,
 				B6AB45228605457CA3832D74 /* Info.plist */,
-				61930B8341B94C2782C35180 /* AudioMixer.entitlements */,
+				61930B8341B94C2782C35180 /* Faderline.entitlements */,
 				334908684BB84AD19589B1D2 /* Frameworks */,
 				9731087258454C44B2254C49 /* Products */,
 			);
@@ -136,21 +136,21 @@
 		9731087258454C44B2254C49 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				42346062E9A64391AB989809 /* AudioMixer.app */,
+				42346062E9A64391AB989809 /* Faderline.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		B2EFCEC02DA24971BB83E901 /* Sources/AudioMixer */ = {
+		B2EFCEC02DA24971BB83E901 /* Sources/Faderline */ = {
 			isa = PBXGroup;
 			children = (
-				405AFF3E93BD48F4A551AF21 /* AudioMixerApp.swift */,
+				405AFF3E93BD48F4A551AF21 /* FaderlineApp.swift */,
 				11DAAD7142074225BDF845BC /* Models */,
 				6BE434F9290A4E9898B1E3AD /* Audio */,
 				0CF74AB0CF36461A9D5AC683 /* ViewModels */,
 				D1570616753A40688CB1C24D /* Views */,
 			);
-			path = Sources/AudioMixer;
+			path = Sources/Faderline;
 			sourceTree = "<group>";
 		};
 		D1570616753A40688CB1C24D /* Views */ = {
@@ -169,9 +169,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		B3AD6BAED65948289EDDE173 /* AudioMixer */ = {
+		B3AD6BAED65948289EDDE173 /* Faderline */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 7CE5F775C5304D53867AB313 /* Build configuration list for PBXNativeTarget "AudioMixer" */;
+			buildConfigurationList = 7CE5F775C5304D53867AB313 /* Build configuration list for PBXNativeTarget "Faderline" */;
 			buildPhases = (
 				39C0BB1E6D7C44CA8777A5A6 /* Sources */,
 				D3F52D1FC4EF4F208E4316BD /* Frameworks */,
@@ -180,9 +180,9 @@
 			);
 			dependencies = (
 			);
-			name = AudioMixer;
-			productName = AudioMixer;
-			productReference = 42346062E9A64391AB989809 /* AudioMixer.app */;
+			name = Faderline;
+			productName = Faderline;
+			productReference = 42346062E9A64391AB989809 /* Faderline.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -194,7 +194,7 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2640;
 			};
-			buildConfigurationList = 65C27407AE084227BA9FE75D /* Build configuration list for PBXProject "AudioMixer" */;
+			buildConfigurationList = 65C27407AE084227BA9FE75D /* Build configuration list for PBXProject "Faderline" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -207,7 +207,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				B3AD6BAED65948289EDDE173 /* AudioMixer */,
+				B3AD6BAED65948289EDDE173 /* Faderline */,
 			);
 		};
 /* End PBXProject section */
@@ -224,7 +224,7 @@
 				A1B2C3D4E5F60718293A4B03 /* DriftCompensatingReader.swift in Sources */,
 				A1B2C3D4E5F60718293A4B05 /* HALAudioUnits.swift in Sources */,
 				A1B2C3D4E5F60718293A4B07 /* HALMixerEngine.swift in Sources */,
-				D4969B645F9042EC87368959 /* AudioMixerApp.swift in Sources */,
+				D4969B645F9042EC87368959 /* FaderlineApp.swift in Sources */,
 				606ABCB6D34048B79BD313E0 /* AudioChannel.swift in Sources */,
 				64A65E15E1E14C8189302DB3 /* AudioDevice.swift in Sources */,
 				0785EAFC169348CC804FF0E9 /* MixerConfiguration.swift in Sources */,
@@ -247,19 +247,19 @@
 		0AB995F834DB435D9C7AFC22 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = AudioMixer.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Faderline.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "AudioMixer needs microphone access to capture audio input devices.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Faderline needs microphone access to capture audio input devices.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.audiomixer.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.faderline.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -317,19 +317,19 @@
 		2A444C1438694A4D91780D65 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = AudioMixer.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Faderline.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "AudioMixer needs microphone access to capture audio input devices.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Faderline needs microphone access to capture audio input devices.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.audiomixer.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.faderline.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -389,7 +389,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		65C27407AE084227BA9FE75D /* Build configuration list for PBXProject "AudioMixer" */ = {
+		65C27407AE084227BA9FE75D /* Build configuration list for PBXProject "Faderline" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				2F31AF8BBAE44FD689C16796 /* Debug */,
@@ -398,7 +398,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		7CE5F775C5304D53867AB313 /* Build configuration list for PBXNativeTarget "AudioMixer" */ = {
+		7CE5F775C5304D53867AB313 /* Build configuration list for PBXNativeTarget "Faderline" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0AB995F834DB435D9C7AFC22 /* Debug */,

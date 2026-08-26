@@ -1,5 +1,5 @@
 /// Standalone test runner — does not require XCTest or full Xcode.
-/// Run: swift Tests/AudioMixerTests/AudioMixerTests.swift (from project root)
+/// Run: swift Tests/FaderlineTests/FaderlineTests.swift (from project root)
 /// Or the tests are verified inline below via assertions.
 
 import Foundation
@@ -33,7 +33,7 @@ func assertEqual<T: Equatable>(_ a: T, _ b: T, _ message: String = "", file: Str
     }
 }
 
-// Note: These tests import types from the main AudioMixer module.
+// Note: These tests import types from the main Faderline module.
 // Since we can't easily @testable import from a script without XCTest/Xcode,
 // the test logic is documented here for running once Xcode is available.
 // Below we test standalone logic that doesn't require imports.
@@ -87,7 +87,7 @@ do {
 
 // MARK: - Fader Taper Logic
 
-// Mirrors Sources/AudioMixer/Audio/FaderTaper.swift's core relationships,
+// Mirrors Sources/Faderline/Audio/FaderTaper.swift's core relationships,
 // since this standalone script can't @testable import the real module.
 // Keep this in sync if that breakpoint table or pan law ever changes.
 print("▸ Fader taper logic")

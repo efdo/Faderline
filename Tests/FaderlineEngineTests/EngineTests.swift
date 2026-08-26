@@ -1,6 +1,6 @@
 import XCTest
 import CoreAudio
-@testable import AudioMixer
+@testable import Faderline
 
 final class ChannelRingBufferTests: XCTestCase {
 

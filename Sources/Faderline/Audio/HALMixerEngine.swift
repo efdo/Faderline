@@ -4,7 +4,7 @@ import CoreAudio
 import Synchronization
 import OSLog
 
-private let logger = Logger(subsystem: "com.audiomixer", category: "HALMixerEngine")
+private let logger = Logger(subsystem: "com.faderline", category: "HALMixerEngine")
 
 /// AUHAL-based mixer engine (LadioCast-style architecture).
 ///

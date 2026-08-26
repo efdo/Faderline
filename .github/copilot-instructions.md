@@ -1,4 +1,4 @@
-# Copilot Instructions — AudioMixer
+# Copilot Instructions — Faderline
 
 This repository uses **`agents.md` as the single source of truth** for AI-agent
 guidance across all tools (Copilot, Claude, Cursor, custom agents, etc.).

@@ -1,0 +1,22 @@
+name: macOS
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build package
+        run: swift build
+
+      - name: Run standalone tests
+        run: swift Tests/FaderlineTests/FaderlineTests.swift
+
+      - name: Run XCTest suite
+        run: swift test

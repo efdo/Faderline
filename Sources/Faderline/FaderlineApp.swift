@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct AudioMixerApp: App {
+struct FaderlineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var mixerViewModel = MixerViewModel()
     @State private var micPermissionDenied = false
@@ -24,7 +24,7 @@ struct AudioMixerApp: App {
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("AudioMixer needs microphone access to capture audio. Enable it in System Settings → Privacy & Security → Microphone.")
+                    Text("Faderline needs microphone access to capture audio. Enable it in System Settings → Privacy & Security → Microphone.")
                 }
                 .task { await requestMicrophonePermission() }
                 // Ensure AUHAL units are properly disposed on termination so
