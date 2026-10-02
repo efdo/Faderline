@@ -77,10 +77,26 @@ This replaces an earlier AVAudioEngine approach that produced crackling due to i
 
 ## Releasing
 
-Signed, notarized `.pkg` installers are built automatically by
-[`.github/workflows/release.yml`](.github/workflows/release.yml) whenever a
-GitHub Release is published. See [`docs/RELEASING.md`](docs/RELEASING.md) for
-the required secrets and the full procedure.
+Build an app-only Release DMG locally:
+
+```bash
+bash scripts/package-app.sh --version 1.2.3 --unsigned-development
+```
+
+Publishing a GitHub Release triggers
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which attaches
+the DMG and SHA-256 checksum to that release. By default these are explicitly
+labeled **unsigned development prereleases**, not signed public releases.
+Developer ID signing and notarization require configured credentials and never
+fall back to unsigned output.
+
+Packages contain **Faderline.app** for **macOS 15+ / Apple Silicon**, an
+Applications shortcut, and installation information only; no virtual microphone
+driver is included or managed. Install by dragging the app to Applications.
+For manual updates, **quit Faderline cleanly with Command-Q and wait for exit**
+before replacing the app. There is no automatic updater.
+See [`docs/RELEASING.md`](docs/RELEASING.md) for versioning, packaging, signing,
+installation, and release instructions.
 
 ## For AI agents
 
