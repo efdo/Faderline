@@ -183,8 +183,11 @@ main output) aligned against a left-hand row-label gutter
 
 - **Window sizing:** `MixerTheme.Metrics.consoleMinimumSize(inputCount:)`
   derives the minimum console size from the strip count, row heights, spacing,
-  and padding. The window uses `.contentMinSize` so it can grow but cannot
-  shrink below the console. Engine status and low-latency controls are hidden
+  and padding. The default window size uses those same metrics to fit the
+  content without extra empty space. The stable `mixer` scene ID avoids reusing
+  older oversized window frames; subsequent user resizing is still restored.
+  The window uses `.contentMinSize` so it can grow but cannot shrink below the
+  console. Engine status and low-latency controls are hidden
   from the UI; their internal state and support remain intact.
 - **`ConsoleRow`** (in `MixerTheme.swift`) is the single source of truth for
   row order, labels, and heights (Device, Channels, Output, Pan, dB,
@@ -209,6 +212,9 @@ main output) aligned against a left-hand row-label gutter
   the main strip has no Channels/Output/Pan/Solo (rendered as em-dash
   placeholders) since it represents the physical output device, not a routed
   source.
+- **Pan knobs:** 36-point diameter with L/R markers, a drag-only center snap
+  within +/-0.08 pan, and double-click to recenter. The snap is UI-side only;
+  persisted pan values and the engine's pan law are unchanged.
 
 ---
 

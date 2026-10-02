@@ -138,11 +138,20 @@ struct ConsoleStripView: View {
     private var panRow: some View {
         switch kind {
         case .input(let strip):
-            PanKnobView(pan: Binding(
-                get: { strip.pan },
-                set: { viewModel.setPan($0, forStrip: strip) }
-            ))
-            .frame(width: 28, height: 28)
+            HStack(alignment: .bottom, spacing: 4) {
+                Text("L")
+                PanKnobView(pan: Binding(
+                    get: { strip.pan },
+                    set: { viewModel.setPan($0, forStrip: strip) }
+                ))
+                .frame(
+                    width: MixerTheme.Metrics.panKnobDiameter,
+                    height: MixerTheme.Metrics.panKnobDiameter
+                )
+                Text("R")
+            }
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(MixerTheme.textLabel)
         case .main:
             placeholderDash
         }
