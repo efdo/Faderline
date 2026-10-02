@@ -4,3 +4,7 @@
 xcuserdata/
 DerivedData/
 .DS_Store
+dist/
+*.dmg
+*.xcarchive
+__pycache__/

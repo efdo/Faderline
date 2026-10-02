@@ -20,3 +20,9 @@ jobs:
 
       - name: Run XCTest suite
         run: swift test
+
+      - name: Test packaging argument validation
+        run: python3 -m unittest discover -s Tests/ReleasePackagingTests -v
+
+      - name: Build and inspect app-only development DMG
+        run: bash scripts/package-app.sh --version 0.0.0 --unsigned-development

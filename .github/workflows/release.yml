@@ -1,8 +1,4 @@
-name: Release
-
-# Builds a signed, notarized macOS installer (.pkg) and attaches it to a
-# GitHub Release. See docs/RELEASING.md for the required secrets and the
-# full release procedure.
+name: Release app DMG
 
 on:
   release:
@@ -10,160 +6,153 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag to attach the .pkg to (required for manual runs)"
+        description: "Existing published release tag to rebuild (vX.Y.Z)"
         required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: app-release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
 
 jobs:
-  build-pkg:
+  package-app:
     runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      SIGNING_MODE: ${{ vars.RELEASE_SIGNING_MODE || 'unsigned-development' }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
-          fetch-tags: true
-
-      - name: Resolve release tag and version
-        id: version
+      - name: Validate release and signing mode
+        id: release
+        shell: bash
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          if [ -z "$TAG" ]; then
-            TAG="${{ inputs.tag }}"
-          fi
-          if [ -z "$TAG" ]; then
-            echo "No release tag available (event: ${{ github.event_name }})." >&2
+          set -euo pipefail
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo "Release tag must be vX.Y.Z." >&2
             exit 1
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          }
+          case "$SIGNING_MODE" in
+            unsigned-development|developer-id) ;;
+            *) echo "Invalid RELEASE_SIGNING_MODE: $SIGNING_MODE" >&2; exit 1 ;;
+          esac
+          # Manual retries must target a published release, not just an existing tag.
+          [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" == false ]]
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Import Developer ID certificates
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Label unsigned development release
+        if: env.SIGNING_MODE == 'unsigned-development'
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="$(gh release view "$TAG" --json name --jq .name)"
+          title="${title:-$TAG}"
+          case "$title" in
+            *"(unsigned development)"*) ;;
+            *) title="$title (unsigned development)" ;;
+          esac
+          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/original-notes.md"
+          banner="**Unsigned development artifacts: NOT Developer ID signed or notarized. macOS Gatekeeper may block these builds.**"
+          if grep -Fq "$banner" "$RUNNER_TEMP/original-notes.md"; then
+            cp "$RUNNER_TEMP/original-notes.md" "$RUNNER_TEMP/release-notes.md"
+          else
+            printf '%s\n\n' "$banner" > "$RUNNER_TEMP/release-notes.md"
+            cat "$RUNNER_TEMP/original-notes.md" >> "$RUNNER_TEMP/release-notes.md"
+          fi
+          gh release edit "$TAG" --title "$title" --prerelease \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+
+      - name: Build package and run repository tests
+        run: |
+          set -euo pipefail
+          swift build
+          swift Tests/FaderlineTests/FaderlineTests.swift
+          swift test
+          python3 -m unittest discover -s Tests/ReleasePackagingTests -v
+
+      - name: Prepare Developer ID signing and notarization
+        if: env.SIGNING_MODE == 'developer-id'
         env:
           APPLICATION_CERTIFICATE_P12: ${{ secrets.DEVELOPER_ID_APPLICATION_P12 }}
           APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_PASSWORD }}
-          INSTALLER_CERTIFICATE_P12: ${{ secrets.DEVELOPER_ID_INSTALLER_P12 }}
-          INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_INSTALLER_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          KEYCHAIN_PATH="$RUNNER_TEMP/release-signing.keychain-db"
-          APPLICATION_CERT_PATH="$RUNNER_TEMP/developer_id_application.p12"
-          INSTALLER_CERT_PATH="$RUNNER_TEMP/developer_id_installer.p12"
-
-          printf '%s' "$APPLICATION_CERTIFICATE_P12" | base64 -D -o "$APPLICATION_CERT_PATH"
-          printf '%s' "$INSTALLER_CERTIFICATE_P12" | base64 -D -o "$INSTALLER_CERT_PATH"
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          security import "$APPLICATION_CERT_PATH" -P "$APPLICATION_CERTIFICATE_PASSWORD" -A \
-            -f pkcs12 -k "$KEYCHAIN_PATH"
-          security import "$INSTALLER_CERT_PATH" -P "$INSTALLER_CERTIFICATE_PASSWORD" -A \
-            -f pkcs12 -k "$KEYCHAIN_PATH"
-
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          EXISTING_KEYCHAINS=$(security list-keychains -d user | sed 's/[[:space:]]*"\(.*\)"[[:space:]]*/\1/')
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $EXISTING_KEYCHAINS
-          security default-keychain -d user -s "$KEYCHAIN_PATH"
-
-          rm -f "$APPLICATION_CERT_PATH" "$INSTALLER_CERT_PATH"
-
-      - name: Archive app
-        env:
+          SIGNING_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          xcodebuild archive \
-            -project Faderline.xcodeproj \
-            -scheme Faderline \
-            -configuration Release \
-            -archivePath "$RUNNER_TEMP/Faderline.xcarchive" \
-            -destination "generic/platform=macOS" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Developer ID Application" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            OTHER_CODE_SIGN_FLAGS="--timestamp"
-
-      - name: Export signed app
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>developer-id</string>
-              <key>teamID</key>
-              <string>$APPLE_TEAM_ID</string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>signingCertificate</key>
-              <string>Developer ID Application</string>
-          </dict>
-          </plist>
-          PLIST
-
-          xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/Faderline.xcarchive" \
-            -exportPath "$RUNNER_TEMP/export" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
-
-      - name: Build installer package
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          PKG_ROOT="$RUNNER_TEMP/pkgroot"
-          mkdir -p "$PKG_ROOT/Applications"
-          cp -R "$RUNNER_TEMP/export/Faderline.app" "$PKG_ROOT/Applications/"
-
-          pkgbuild \
-            --root "$PKG_ROOT" \
-            --identifier com.faderline.app.pkg \
-            --version "$VERSION" \
-            --install-location / \
-            --sign "Developer ID Installer" \
-            "$RUNNER_TEMP/Faderline-$VERSION.pkg"
-
-      - name: Notarize package
-        env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
         run: |
-          xcrun notarytool submit "$RUNNER_TEMP/Faderline-$VERSION.pkg" \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --wait
+          set -euo pipefail
+          [[ -n "$APPLICATION_CERTIFICATE_P12" && -n "$APPLICATION_CERTIFICATE_PASSWORD" \
+            && -n "$KEYCHAIN_PASSWORD" && -n "$SIGNING_IDENTITY" && -n "$APPLE_TEAM_ID" \
+            && -n "$APPLE_ID" && -n "$APPLE_APP_SPECIFIC_PASSWORD" ]] || {
+            echo "Developer ID mode requires all signing and notarization secrets; see docs/RELEASING.md." >&2
+            exit 1
+          }
+          keychain="$RUNNER_TEMP/app-release-signing.keychain-db"
+          certificate="$RUNNER_TEMP/developer-id-application.p12"
+          printf '%s' "$APPLICATION_CERTIFICATE_P12" | base64 -D > "$certificate"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security import "$certificate" -P "$APPLICATION_CERTIFICATE_PASSWORD" \
+            -f pkcs12 -k "$keychain" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          rm "$certificate"
+          xcrun notarytool store-credentials app-release \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" --keychain "$keychain"
 
-      - name: Staple notarization ticket
+      - name: Package unsigned development DMG
+        if: env.SIGNING_MODE == 'unsigned-development'
+        run: |
+          bash scripts/package-app.sh --version "${TAG#v}" \
+            --build-number "$GITHUB_RUN_NUMBER" --unsigned-development
+
+      - name: Package Developer ID signed and notarized DMG
+        if: env.SIGNING_MODE == 'developer-id'
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: xcrun stapler staple "$RUNNER_TEMP/Faderline-$VERSION.pkg"
+          SIGNING_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION_IDENTITY }}
+        run: |
+          bash scripts/package-app.sh --version "${TAG#v}" \
+            --build-number "$GITHUB_RUN_NUMBER" --developer-id "$SIGNING_IDENTITY" \
+            --notary-profile app-release
 
-      - name: Upload package as workflow artifact
+      - name: Retain DMG and checksum as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Faderline-${{ steps.version.outputs.version }}.pkg
-          path: ${{ runner.temp }}/Faderline-${{ steps.version.outputs.version }}.pkg
+          name: Faderline-${{ steps.release.outputs.version }}-${{ env.SIGNING_MODE }}
+          path: |
+            dist/*/*.dmg
+            dist/*/*.sha256
+          if-no-files-found: error
 
-      - name: Attach package to GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ steps.version.outputs.tag }}
+      - name: Attach DMG and checksum to GitHub Release
+        shell: bash
         run: |
-          gh release upload "$TAG" "$RUNNER_TEMP/Faderline-$VERSION.pkg" --clobber
+          set -euo pipefail
+          gh release upload "$TAG" dist/*/*.dmg dist/*/*.sha256 --clobber
 
-      - name: Remove temporary keychain
-        if: always()
+      - name: Remove temporary signing credentials
+        if: always() && env.SIGNING_MODE == 'developer-id'
+        shell: bash
         run: |
-          security delete-keychain "$RUNNER_TEMP/release-signing.keychain-db" || true
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/developer-id-application.p12"
+          if [[ -f "$RUNNER_TEMP/app-release-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/app-release-signing.keychain-db"
+          fi
