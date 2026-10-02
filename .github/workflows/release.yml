@@ -57,6 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           title="$(gh release view "$TAG" --json name --jq .name)"
+          title="${title:-$TAG}"
           case "$title" in
             *"(unsigned development)"*) ;;
             *) title="$title (unsigned development)" ;;

@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -182,6 +183,61 @@ class PackagingArgumentTests(unittest.TestCase):
             self.assertFalse(marker.exists())
             self.assertFalse((output / "Faderline-1.2.3-arm64-developer-id-notarized").exists())
             self.assertNotIn("'--sign', '-'", signing_calls.read_text())
+
+
+class ReleaseTitleTests(unittest.TestCase):
+    def test_unsigned_label_preserves_release_name_or_falls_back_to_tag(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        step = workflow.split("      - name: Label unsigned development release\n", 1)[1]
+        step = step.split("\n      - name:", 1)[0]
+        script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+        banner = (
+            "**Unsigned development artifacts: NOT Developer ID signed or notarized. "
+            "macOS Gatekeeper may block these builds.**"
+        )
+        for title, expected, notes in (
+            ("", "v1.2.3 (unsigned development)", "Original release notes"),
+            ("Custom title", "Custom title (unsigned development)", "Original release notes"),
+            ("v1.2.3 (unsigned development)", "v1.2.3 (unsigned development)",
+             f"{banner}\n\nOriginal release notes"),
+        ):
+            with self.subTest(title=title), tempfile.TemporaryDirectory() as temporary:
+                tools = Path(temporary)
+                gh = tools / "gh"
+                gh.write_text(
+                    f"#!{sys.executable}\n"
+                    + textwrap.dedent("""
+                        import json, os, sys
+                        from pathlib import Path
+                        args = sys.argv[1:]
+                        if args[:2] == ['release', 'view']:
+                            field = args[args.index('--json') + 1]
+                            print(os.environ['RELEASE_TITLE'] if field == 'name'
+                                  else os.environ['RELEASE_NOTES'])
+                        elif args[:2] == ['release', 'edit']:
+                            Path(os.environ['EDIT_CAPTURE']).write_text(json.dumps(args))
+                        else:
+                            raise SystemExit('Unexpected GitHub call')
+                    """)
+                )
+                gh.chmod(0o755)
+                capture = tools / "edit.json"
+                env = dict(
+                    os.environ, PATH=f"{tools}:{os.environ['PATH']}",
+                    TAG="v1.2.3", RUNNER_TEMP=str(tools),
+                    RELEASE_TITLE=title, RELEASE_NOTES=notes, EDIT_CAPTURE=str(capture),
+                )
+                result = subprocess.run(
+                    ["bash", "-euo", "pipefail", "-c", script],
+                    env=env, capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                args = json.loads(capture.read_text())
+                self.assertEqual(args[args.index("--title") + 1], expected)
+                self.assertIn("--prerelease", args)
+                updated_notes = (tools / "release-notes.md").read_text()
+                self.assertEqual(updated_notes.count(banner), 1)
+                self.assertIn("Original release notes", updated_notes)
 
 
 if __name__ == "__main__":
