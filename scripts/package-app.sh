@@ -144,10 +144,14 @@ if [[ "$mode" == unsigned-development ]]; then
     signing_note="UNSIGNED DEVELOPMENT ARTIFACT: ad-hoc signed only, NOT Developer ID signed or notarized. Gatekeeper may block it. Use only for trusted development."
 else
     codesign --force --sign "$identity" --options runtime --timestamp \
-        --entitlements "$root/Faderline.entitlements" "$app"
+        --entitlements "$root/scripts/DeveloperID.entitlements" "$app"
     codesign --display --verbose=4 "$app" 2> "$work/app-signature.txt"
     grep -Fx "Authority=$identity" "$work/app-signature.txt" >/dev/null \
         || fail "The app was not signed with the requested Developer ID identity"
+    codesign --display --entitlements - --xml "$app" > "$work/app-entitlements.plist"
+    [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.device.audio-input' \
+        "$work/app-entitlements.plist")" == true ]] \
+        || fail "The hardened-runtime app is missing its Audio Input entitlement"
     ditto -c -k --keepParent "$app" "$work/notarization.zip"
     notarize "$work/notarization.zip" "$work/app-notarization.plist"
     xcrun stapler staple "$app"

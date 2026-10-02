@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import plistlib
 import subprocess
 import sys
 import textwrap
@@ -84,6 +85,38 @@ class PackagingArgumentTests(unittest.TestCase):
             "--developer-id requires --notary-profile",
         )
 
+    def test_public_signing_entitlements_allow_audio_without_sandboxing(self):
+        with (ROOT / "scripts/DeveloperID.entitlements").open("rb") as source:
+            entitlements = plistlib.load(source)
+        self.assertEqual(entitlements, {"com.apple.security.device.audio-input": True})
+
+    @unittest.skipUnless(sys.platform == "darwin", "Requires macOS signing tools")
+    def test_codesign_xml_preserves_audio_input_with_hardened_runtime(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = str(Path(temporary) / "entitlement-test")
+            compiled = subprocess.run(
+                ["clang", "-x", "c", "-", "-o", executable],
+                input="int main(void) { return 0; }\n",
+                capture_output=True, text=True,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            signed = subprocess.run(
+                ["codesign", "--force", "--sign", "-", "--options", "runtime",
+                 "--timestamp=none", "--entitlements",
+                 str(ROOT / "scripts/DeveloperID.entitlements"), executable],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(signed.returncode, 0, signed.stderr)
+            displayed = subprocess.run(
+                ["codesign", "--display", "--entitlements", "-", "--xml", executable],
+                capture_output=True,
+            )
+            self.assertEqual(displayed.returncode, 0, displayed.stderr)
+            self.assertEqual(
+                plistlib.loads(displayed.stdout),
+                {"com.apple.security.device.audio-input": True},
+            )
+
     def test_missing_values_and_unknown_arguments(self):
         for option in ("--version", "--build-number", "--output",
                        "--developer-id", "--notary-profile"):
@@ -133,7 +166,13 @@ class PackagingArgumentTests(unittest.TestCase):
                 "codesign": f"""
                     with open({str(signing_calls)!r}, 'a') as log:
                         log.write(repr(sys.argv[1:]) + '\\n')
-                    if '--display' in sys.argv:
+                    if '--display' in sys.argv and '--entitlements' in sys.argv:
+                        if '--xml' in sys.argv:
+                            plistlib.dump({{'com.apple.security.device.audio-input': True}},
+                                          sys.stdout.buffer)
+                        else:
+                            print('[Dict] human-readable entitlements')
+                    elif '--display' in sys.argv:
                         print('Authority={identity}', file=sys.stderr)
                 """,
                 "xcodebuild": """

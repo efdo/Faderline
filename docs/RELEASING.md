@@ -113,7 +113,11 @@ or push a tag. The workflow serializes runs for the same tag.
 Public distribution requires an active Apple Developer Program membership,
 a valid **Developer ID Application** certificate **and its private key**,
 hardened runtime, secure timestamps, and acceptance by Apple's notarization
-service. A Developer ID Installer certificate is **not needed** for this
+service. Signed packaging uses [`scripts/DeveloperID.entitlements`](../scripts/DeveloperID.entitlements)
+to grant the hardened runtime **Audio Input** access required for CoreAudio
+capture. It verifies that entitlement on the signed app. This does **not**
+enable App Sandbox or alter the ordinary development build's entitlements.
+A Developer ID Installer certificate is **not needed** for this
 app-only DMG flow. The former `.pkg` pipeline has been replaced.
 
 For local signed packaging, import your certificate into your own keychain
