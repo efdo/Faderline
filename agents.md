@@ -34,7 +34,9 @@ xcodebuild -project Faderline.xcodeproj -scheme Faderline -configuration Debug b
 ```
 
 **Always run all three verification steps after any non-trivial change.** The Xcode project and SPM package are both maintained; they must both build.
-After those checks, **launch the app once** to confirm the UI/runtime path still starts:
+After those checks, **launch the app once** to confirm the UI/runtime path still starts.
+Before every launch, stop any running Faderline (or legacy AudioMixer) instances
+with `SIGTERM` using their exact PIDs, and wait for them to exit. Never use `SIGKILL`.
 ```bash
 open /tmp/Faderline-Build/Build/Products/Debug/Faderline.app
 ```
@@ -179,6 +181,11 @@ vertical channel strips (one `ConsoleStripView` per input, plus one for the
 main output) aligned against a left-hand row-label gutter
 (`ConsoleGutterView`), not the old horizontal LadioCast-style cards.
 
+- **Window sizing:** `MixerTheme.Metrics.consoleMinimumSize(inputCount:)`
+  derives the minimum console size from the strip count, row heights, spacing,
+  and padding. The window uses `.contentMinSize` so it can grow but cannot
+  shrink below the console. Engine status and low-latency controls are hidden
+  from the UI; their internal state and support remain intact.
 - **`ConsoleRow`** (in `MixerTheme.swift`) is the single source of truth for
   row order, labels, and heights (Device, Channels, Output, Pan, dB,
   fader+meter, Mute/Solo, name plate). Both `ConsoleGutterView` and
@@ -236,7 +243,8 @@ If Xcode says "cannot find X in scope" but `swift build` succeeds, the pbxproj i
 
 Before removing `LegacyMixerEngine`:
 
-1. Launch app, verify green "Engine Running" dot.
+1. Launch app, verify the engine starts using the diagnostics log (the engine
+   status indicator is currently hidden from the UI).
 2. SSL 2 Input 1 → L=Ch1, R=Ch2, fader at 0 dB, Main routed. Meters should move when speaking.
 3. Select output (BlackHole or MacBook speakers). Audio should be audible.
 4. Drag the fader through its full range, including past 0 dB toward +6 dB — smooth, no glitch. Type an exact dB value into the field and press Return.

@@ -2,6 +2,23 @@ import XCTest
 import CoreAudio
 @testable import Faderline
 
+final class ConsoleLayoutTests: XCTestCase {
+    func testMinimumSizeFitsTwoInputsAndMainWithoutWideningStrips() {
+        let size = MixerTheme.Metrics.consoleMinimumSize(inputCount: 2)
+        XCTAssertEqual(MixerTheme.Metrics.stripWidth, 125)
+        XCTAssertEqual(size.width, 529)
+        XCTAssertEqual(size.height, 484)
+    }
+
+    func testMinimumWidthTracksInputCount() {
+        let mainOnly = MixerTheme.Metrics.consoleMinimumSize(inputCount: 0)
+        let fourInputs = MixerTheme.Metrics.consoleMinimumSize(inputCount: 4)
+        XCTAssertEqual(mainOnly.width, 263)
+        XCTAssertEqual(fourInputs.width, 795)
+        XCTAssertEqual(mainOnly.height, fourInputs.height)
+    }
+}
+
 final class ChannelRingBufferTests: XCTestCase {
 
     private func makeInput(_ values: [Float]) -> [Float] { values }

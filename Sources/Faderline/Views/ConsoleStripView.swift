@@ -34,7 +34,7 @@ struct ConsoleStripView: View {
             row(.muteSolo) { muteSoloRow }
             row(.namePlate) { namePlateRow }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, MixerTheme.Metrics.stripVerticalPadding)
         .padding(.horizontal, 4)
         .frame(width: MixerTheme.Metrics.stripWidth)
         .background(isDimmed ? MixerTheme.stripDimmed : MixerTheme.stripBg)
