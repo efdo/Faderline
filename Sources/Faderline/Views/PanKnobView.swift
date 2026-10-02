@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// A circular pan/balance knob. Drag vertically to adjust, double-click to
-/// recenter. See `FaderTaper.panGains(_:)` for how `pan` maps to L/R gain.
+/// recenter. A small drag dead zone snaps to center. See
+/// `FaderTaper.panGains(_:)` for how `pan` maps to L/R gain.
 struct PanKnobView: View {
     /// -1 (hard left) ... 0 (center) ... +1 (hard right).
     @Binding var pan: Float
@@ -48,9 +49,11 @@ struct PanKnobView: View {
                                     dragStartPan = pan
                                 }
                                 guard let start = dragStartPan else { return }
-                                // A drag spanning the knob's own diameter sweeps the full -1...+1 range.
-                                let delta = Float(-value.translation.height) / Float(size) * 2
-                                pan = min(max(start + delta, -1), 1)
+                                pan = Self.pan(
+                                    forDragTranslation: value.translation.height,
+                                    startPan: start,
+                                    diameter: size
+                                )
                             }
                             .onEnded { _ in
                                 dragStartPan = nil
@@ -59,6 +62,13 @@ struct PanKnobView: View {
             )
         }
         .aspectRatio(1, contentMode: .fit)
+    }
+
+    static func pan(forDragTranslation translation: CGFloat, startPan: Float, diameter: CGFloat) -> Float {
+        // Use the unsnapped gesture origin so dragging through center never gets stuck.
+        let delta = Float(-translation) / Float(max(diameter, 1)) * 2
+        let value = min(max(startPan + delta, -1), 1)
+        return abs(value) <= 0.08 ? 0 : value
     }
 }
 

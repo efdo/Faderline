@@ -14,7 +14,9 @@ struct FaderlineApp: App {
     @State private var micPermissionDenied = false
 
     var body: some Scene {
-        WindowGroup("Faderline") {
+        let consoleSize = MixerTheme.Metrics.consoleMinimumSize(inputCount: mixerViewModel.inputStrips.count)
+
+        WindowGroup("Faderline", id: "mixer") {
             MixerWindow()
                 .environment(mixerViewModel)
                 .alert("Microphone Access Denied", isPresented: $micPermissionDenied) {
@@ -37,7 +39,7 @@ struct FaderlineApp: App {
                 }
         }
         .windowResizability(.contentMinSize)
-        .defaultSize(width: 460, height: 580)
+        .defaultSize(width: consoleSize.width, height: consoleSize.height)
     }
 
     private func requestMicrophonePermission() async {

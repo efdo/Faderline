@@ -3,6 +3,11 @@ import CoreAudio
 @testable import Faderline
 
 final class ConsoleLayoutTests: XCTestCase {
+    func testPanKnobFitsExistingRow() {
+        XCTAssertEqual(MixerTheme.Metrics.panKnobDiameter, 36)
+        XCTAssertLessThan(MixerTheme.Metrics.panKnobDiameter, ConsoleRow.pan.height)
+    }
+
     func testMinimumSizeFitsTwoInputsAndMainWithoutWideningStrips() {
         let size = MixerTheme.Metrics.consoleMinimumSize(inputCount: 2)
         XCTAssertEqual(MixerTheme.Metrics.stripWidth, 125)
@@ -16,6 +21,46 @@ final class ConsoleLayoutTests: XCTestCase {
         XCTAssertEqual(mainOnly.width, 263)
         XCTAssertEqual(fourInputs.width, 795)
         XCTAssertEqual(mainOnly.height, fourInputs.height)
+    }
+}
+
+final class PanKnobTests: XCTestCase {
+    func testCenterSnapIncludesBothEdges() {
+        for translation: CGFloat in [-4, -2, 0, 2, 4] {
+            XCTAssertEqual(PanKnobView.pan(
+                forDragTranslation: translation, startPan: 0, diameter: 100
+            ), 0)
+        }
+    }
+
+    func testDraggingPastCenterSnapMovesInBothDirections() {
+        XCTAssertEqual(PanKnobView.pan(
+            forDragTranslation: -5, startPan: 0, diameter: 100
+        ), 0.1, accuracy: 0.0001)
+        XCTAssertEqual(PanKnobView.pan(
+            forDragTranslation: 5, startPan: 0, diameter: 100
+        ), -0.1, accuracy: 0.0001)
+    }
+
+    func testDragCanCrossCenterWithoutLosingItsOrigin() {
+        XCTAssertEqual(PanKnobView.pan(
+            forDragTranslation: -25, startPan: -0.5, diameter: 100
+        ), 0)
+        XCTAssertEqual(PanKnobView.pan(
+            forDragTranslation: -35, startPan: -0.5, diameter: 100
+        ), 0.2, accuracy: 0.0001)
+        XCTAssertEqual(PanKnobView.pan(
+            forDragTranslation: 35, startPan: 0.5, diameter: 100
+        ), -0.2, accuracy: 0.0001)
+    }
+
+    func testDragClampsAtHardLeftAndRight() {
+        XCTAssertEqual(PanKnobView.pan(
+            forDragTranslation: 100, startPan: 0.5, diameter: 36
+        ), -1)
+        XCTAssertEqual(PanKnobView.pan(
+            forDragTranslation: -100, startPan: -0.5, diameter: 36
+        ), 1)
     }
 }
 

@@ -75,6 +75,7 @@ enum MixerTheme {
         static let rowSpacing: CGFloat        = 6
         static let controlRowHeight: CGFloat  = 22
         static let panRowHeight: CGFloat      = 46
+        static let panKnobDiameter: CGFloat   = 36
         static let faderRowMinHeight: CGFloat = 220
         static let namePlateHeight: CGFloat   = 22
         static let consoleSpacing: CGFloat    = 8
