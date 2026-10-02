@@ -77,6 +77,21 @@ enum MixerTheme {
         static let panRowHeight: CGFloat      = 46
         static let faderRowMinHeight: CGFloat = 220
         static let namePlateHeight: CGFloat   = 22
+        static let consoleSpacing: CGFloat    = 8
+        static let consolePadding: CGFloat    = 16
+        static let gutterTrailingPadding: CGFloat = 8
+        static let stripVerticalPadding: CGFloat = 6
+
+        static func consoleMinimumSize(inputCount: Int) -> CGSize {
+            let stripCount = inputCount + 1
+            let width = gutterWidth + gutterTrailingPadding
+                + CGFloat(stripCount) * (stripWidth + consoleSpacing)
+                + 2 * consolePadding
+            let height = ConsoleRow.allCases.reduce(CGFloat.zero) { $0 + $1.height }
+                + CGFloat(ConsoleRow.allCases.count - 1) * rowSpacing
+                + 2 * stripVerticalPadding + 2 * consolePadding
+            return CGSize(width: width, height: height)
+        }
     }
 }
 
@@ -129,6 +144,6 @@ struct ConsoleGutterView: View {
             }
         }
         .frame(width: MixerTheme.Metrics.gutterWidth, alignment: .trailing)
-        .padding(.trailing, 8)
+        .padding(.trailing, MixerTheme.Metrics.gutterTrailingPadding)
     }
 }

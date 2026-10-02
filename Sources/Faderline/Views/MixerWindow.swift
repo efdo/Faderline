@@ -6,6 +6,8 @@ struct MixerWindow: View {
     @Environment(MixerViewModel.self) private var viewModel
 
     var body: some View {
+        let minimumSize = MixerTheme.Metrics.consoleMinimumSize(inputCount: viewModel.inputStrips.count)
+
         VStack(spacing: 0) {
             // Error banner
             if let error = viewModel.mixerEngine.lastError {
@@ -26,38 +28,18 @@ struct MixerWindow: View {
                 .background(MixerTheme.errorBannerBg)
             }
 
-            // Engine status + global settings
-            HStack {
-                Circle()
-                    .fill(viewModel.mixerEngine.isRunning ? MixerTheme.engineRunning : MixerTheme.engineStopped)
-                    .frame(width: 8, height: 8)
-                Text(viewModel.mixerEngine.isRunning ? "Engine Running" : "Engine Stopped")
-                    .font(.caption)
-                    .foregroundStyle(MixerTheme.textSecondary)
-                Spacer()
-                Toggle("Low latency", isOn: Binding(
-                    get: { viewModel.lowLatencyModeEnabled },
-                    set: { viewModel.setLowLatencyModeEnabled($0) }
-                ))
-                .toggleStyle(.switch)
-                .font(.caption)
-                .foregroundStyle(MixerTheme.textLabel)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
-
             // Console: row-label gutter + one strip per input + the main output strip.
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: MixerTheme.Metrics.consoleSpacing) {
                 ConsoleGutterView()
                 ForEach(viewModel.inputStrips) { strip in
                     ConsoleStripView(kind: .input(strip))
                 }
                 ConsoleStripView(kind: .main(viewModel.mainOutput))
             }
-            .padding(16)
+            .padding(MixerTheme.Metrics.consolePadding)
+            .frame(minWidth: minimumSize.width, minHeight: minimumSize.height)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MixerTheme.consoleBg)
-        .frame(minWidth: 440, minHeight: 560)
     }
 }

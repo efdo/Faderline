@@ -36,7 +36,7 @@ struct FaderlineApp: App {
                     mixerViewModel.stopEngine()
                 }
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
         .defaultSize(width: 460, height: 580)
     }
 
