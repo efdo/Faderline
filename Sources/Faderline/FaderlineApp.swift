@@ -14,7 +14,7 @@ struct FaderlineApp: App {
     @State private var micPermissionDenied = false
 
     var body: some Scene {
-        WindowGroup("Mixer") {
+        WindowGroup("Faderline") {
             MixerWindow()
                 .environment(mixerViewModel)
                 .alert("Microphone Access Denied", isPresented: $micPermissionDenied) {
