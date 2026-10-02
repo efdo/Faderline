@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B2C3D4E5F60718293A4B11 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B12 /* Assets.xcassets */; };
 		0785EAFC169348CC804FF0E9 /* MixerConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E58BE60E14A4286BF87CA4B /* MixerConfiguration.swift */; };
 		08C9425BE29343EDB0F61F65 /* MixerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1393959C9A64828BBAA5CE0 /* MixerWindow.swift */; };
 		1B892DB6FB1A47E483A1D4BA /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 65C5BE9AB6024A4ABB16038B /* AudioToolbox.framework */; };
@@ -34,6 +35,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A1B2C3D4E5F60718293A4B12 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 		0474FED8E94643CFB161F3C1 /* LegacyMixerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyMixerEngine.swift; sourceTree = "<group>"; };
 		0F27C3ABF1454B14BC384661 /* AudioChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioChannel.swift; sourceTree = "<group>"; };
 		18B9EBFBC9A441A48E22BE19 /* LevelMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelMeter.swift; sourceTree = "<group>"; };
@@ -81,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				B2EFCEC02DA24971BB83E901 /* Sources/Faderline */,
+				A1B2C3D4E5F60718293A4B12 /* Assets.xcassets */,
 				B6AB45228605457CA3832D74 /* Info.plist */,
 				61930B8341B94C2782C35180 /* Faderline.entitlements */,
 				334908684BB84AD19589B1D2 /* Frameworks */,
@@ -175,6 +178,7 @@
 			buildPhases = (
 				39C0BB1E6D7C44CA8777A5A6 /* Sources */,
 				D3F52D1FC4EF4F208E4316BD /* Frameworks */,
+				A1B2C3D4E5F60718293A4B13 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -212,6 +216,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		A1B2C3D4E5F60718293A4B13 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F60718293A4B11 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		39C0BB1E6D7C44CA8777A5A6 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -247,6 +262,7 @@
 		0AB995F834DB435D9C7AFC22 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Faderline.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -318,6 +334,7 @@
 		2A444C1438694A4D91780D65 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Faderline.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;

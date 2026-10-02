@@ -34,6 +34,17 @@ Open `Faderline.xcodeproj`, select the Faderline scheme, press ⌘R.
 
 > Full Xcode required (not just Command Line Tools).
 
+### App icon
+
+The Xcode app bundle (including release installers) uses
+`Resources/Assets.xcassets/AppIcon.appiconset`. It contains all macOS icon
+sizes at 1x and 2x, generated from the 1024×1024
+`icon_512x512@2x.png` source with transparent 5% outer padding on each edge.
+Replace the PNGs in this set to update the icon,
+keeping the filenames and dimensions listed in `Contents.json`.
+SPM builds a standalone executable, not an `.app` bundle, so it does not
+package the app icon.
+
 ## Architecture
 
 ```
