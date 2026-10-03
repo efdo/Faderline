@@ -44,9 +44,14 @@ and SDK rather than
 using `macos-latest`, the runner's default Xcode, or an automatically advancing
 `latest-stable` selector. `DEVELOPER_DIR` selects the documented preinstalled
 path without needing `setup-xcode` or changing the system developer selection.
-This favors an auditable toolchain over automatic upgrades; update the pins
-in **both workflows** and their verification tests when a newer stable hosted
-toolchain is available. Runner images themselves are not immutable, and
+The shared composite action
+[`.github/actions/setup-toolchain/action.yml`](../.github/actions/setup-toolchain/action.yml)
+defines the toolchain pins once, exports them to subsequent job steps via
+`GITHUB_ENV`, and runs verification. Update that action and its verification
+tests when a newer stable hosted toolchain is available. The runner label
+remains in both workflows because runner selection happens before steps run.
+This favors an auditable toolchain over automatic upgrades.
+Runner images themselves are not immutable, and
 removal/replacement of the pinned Xcode intentionally fails CI rather than
 silently changing the SDK.
 
@@ -58,7 +63,7 @@ unrecognized output even when Xcode/SDK match. After packaging, it requires
 the bundle's `DTSDKName=macosx26.5`,
 `DTXcode=2660`, `DTXcodeBuild=17F113`, `LSMinimumSystemVersion=15.0` and
 arm64-only executable before uploading any artifacts. Release retries take
-this verification tooling from the **workflow revision**, while app source
+the shared action and verification tooling from the **workflow revision**, while app source
 and packaging still come from the **requested release tag**, so older
 published tags need not contain the new verifier.
 Presentation dependencies are installed only when the release tag contains

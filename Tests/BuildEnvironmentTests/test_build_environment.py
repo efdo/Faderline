@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/verify-build-environment.py"
+ACTION = ROOT / ".github/actions/setup-toolchain/action.yml"
 SPEC = importlib.util.spec_from_file_location("build_environment", SCRIPT)
 VERIFY = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFY)
@@ -97,13 +98,63 @@ class BuildEnvironmentTests(unittest.TestCase):
                     self.assertEqual(VERIFY.main(), 1)
                     command.assert_any_call("swift", "--version")
 
-    def test_workflows_share_toolchain_pins(self):
-        for filename in ("macos.yml", "release.yml"):
+    def test_workflows_use_shared_toolchain_action_without_duplicate_pins(self):
+        action = ACTION.read_text()
+        pins = dict(re.findall(r"^        (EXPECTED_\w+): '([^']+)'$",
+                               action, re.MULTILINE))
+        self.assertEqual(pins, EXPECTED)
+        for filename, path in (
+            ("macos.yml", "./.github/actions/setup-toolchain"),
+            ("release.yml", "./.ci-toolchain/.github/actions/setup-toolchain"),
+        ):
             with self.subTest(filename=filename):
                 workflow = (ROOT / ".github/workflows" / filename).read_text()
-                pins = dict(re.findall(r"^      (EXPECTED_\w+): '([^']+)'$",
-                                       workflow, re.MULTILINE))
-                self.assertEqual(pins, EXPECTED)
+                self.assertIn(f"uses: {path}", workflow)
+                self.assertNotRegex(workflow, r"\b(?:EXPECTED_\w+|DEVELOPER_DIR):")
+                self.assertIn("runs-on: macos-26", workflow)
+        release = (ROOT / ".github/workflows/release.yml").read_text()
+        self.assertIn("ref: ${{ github.workflow_sha }}", release)
+        self.assertIn("path: .ci-toolchain", release)
+
+    def test_shared_action_exports_pins_and_propagates_verification_failure(self):
+        action = ACTION.read_text()
+        script = textwrap.dedent(action.split("      run: |\n", 1)[1])
+        pins = dict(re.findall(r"^        (EXPECTED_\w+): '([^']+)'$",
+                               action, re.MULTILINE))
+        developer_dir = re.search(r"^        DEVELOPER_DIR: (.+)$",
+                                  action, re.MULTILINE).group(1)
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as temporary:
+                tools = Path(temporary)
+                (tools / "python3").symlink_to(VERIFY.sys.executable)
+                outputs = {
+                    "sw_vers": "26.6.2",
+                    "uname": "arm64",
+                    "xcodebuild": "Xcode 26.6\nBuild version 17F113",
+                    "xcrun": "26.5",
+                    "swift": self.tool_output("swift", "--version"),
+                }
+                if fail:
+                    outputs["swift"] = "Apple Swift version 6.4"
+                for name, output in outputs.items():
+                    tool = tools / name
+                    tool.write_text(f"#!{VERIFY.sys.executable}\nprint({output!r})\n")
+                    tool.chmod(0o755)
+                exported = tools / "github-env"
+                env = dict(
+                    os.environ, **pins, DEVELOPER_DIR=developer_dir,
+                    GITHUB_ENV=str(exported), TOOLCHAIN_ACTION_PATH=str(ACTION.parent),
+                    PATH=f"{tools}:{os.environ['PATH']}",
+                )
+                result = subprocess.run(
+                    ["bash", "-euo", "pipefail", "-c", script], env=env,
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 1 if fail else 0, result.stderr)
+                actual = dict(line.split("=", 1) for line in exported.read_text().splitlines())
+                self.assertEqual(actual, dict(pins, DEVELOPER_DIR=developer_dir))
+                if fail:
+                    self.assertIn("Could not parse", result.stderr)
 
     def test_release_tests_support_old_tags_without_dependency_fallback(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
