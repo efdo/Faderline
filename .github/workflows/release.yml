@@ -19,10 +19,15 @@ concurrency:
 
 jobs:
   package-app:
-    runs-on: macos-15
+    runs-on: macos-26
     permissions:
       contents: write
     env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      EXPECTED_XCODE_VERSION: '26.6'
+      EXPECTED_XCODE_BUILD: '17F113'
+      EXPECTED_DTXCODE: '2660'
+      EXPECTED_MACOS_SDK_VERSION: '26.5'
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
       SIGNING_MODE: ${{ vars.RELEASE_SIGNING_MODE || 'unsigned-development' }}
       GH_TOKEN: ${{ github.token }}
@@ -50,6 +55,16 @@ jobs:
         with:
           ref: refs/tags/${{ env.TAG }}
           persist-credentials: false
+
+      - name: Check out toolchain verification from workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .ci-toolchain
+          persist-credentials: false
+
+      - name: Report and verify selected build environment
+        run: python3 .ci-toolchain/scripts/verify-build-environment.py
 
       - name: Label unsigned development release
         if: env.SIGNING_MODE == 'unsigned-development'
@@ -80,6 +95,7 @@ jobs:
           swift Tests/FaderlineTests/FaderlineTests.swift
           swift test
           python3 -m unittest discover -s Tests/ReleasePackagingTests -v
+          python3 -m unittest discover -s .ci-toolchain/Tests/BuildEnvironmentTests -v
 
       - name: Prepare Developer ID signing and notarization
         if: env.SIGNING_MODE == 'developer-id'
@@ -131,6 +147,9 @@ jobs:
           bash scripts/package-app.sh --version "${TAG#v}" \
             --build-number "$GITHUB_RUN_NUMBER" --developer-id "$SIGNING_IDENTITY" \
             --notary-profile app-release
+
+      - name: Verify packaged app SDK and deployment requirements
+        run: python3 .ci-toolchain/scripts/verify-build-environment.py --app dist/*/Faderline.app
 
       - name: Retain DMG and checksum as workflow artifacts
         uses: actions/upload-artifact@v4

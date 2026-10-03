@@ -1,0 +1,128 @@
+import contextlib
+import importlib.util
+import io
+import os
+from pathlib import Path
+import plistlib
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "scripts/verify-build-environment.py"
+SPEC = importlib.util.spec_from_file_location("build_environment", SCRIPT)
+VERIFY = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(VERIFY)
+EXPECTED = {
+    "EXPECTED_XCODE_VERSION": "26.6",
+    "EXPECTED_XCODE_BUILD": "17F113",
+    "EXPECTED_DTXCODE": "2660",
+    "EXPECTED_MACOS_SDK_VERSION": "26.5",
+}
+
+
+class BuildEnvironmentTests(unittest.TestCase):
+    def setUp(self):
+        output = io.StringIO()
+        self.addCleanup(output.close)
+        contexts = contextlib.ExitStack()
+        self.addCleanup(contexts.close)
+        contexts.enter_context(contextlib.redirect_stdout(output))
+        contexts.enter_context(contextlib.redirect_stderr(output))
+
+    def tool_output(self, *args):
+        return {
+            ("sw_vers", "-productVersion"): "26.6.2",
+            ("sw_vers", "-buildVersion"): "25G83",
+            ("uname", "-m"): "arm64",
+            ("xcodebuild", "-version"): "Xcode 26.6\nBuild version 17F113",
+            ("xcrun", "--sdk", "macosx", "--show-sdk-version"): "26.5",
+            ("swift", "--version"): "Apple Swift version 6.3",
+        }[args]
+
+    def test_selected_stable_toolchain(self):
+        with patch.object(VERIFY, "command", side_effect=self.tool_output):
+            VERIFY.verify_toolchain(EXPECTED)
+
+    def test_wrong_xcode_build_sdk_or_host_fails(self):
+        for args, wrong in (
+            (("xcodebuild", "-version"), "Xcode 16.4\nBuild version 16F6"),
+            (("xcodebuild", "-version"), "Xcode 26.6\nBuild version 17F999"),
+            (("xcodebuild", "-version"), "Xcode 27.2 beta\nBuild version 18B1"),
+            (("xcrun", "--sdk", "macosx", "--show-sdk-version"), "15.5"),
+            (("uname", "-m"), "x86_64"),
+        ):
+            with self.subTest(args=args, wrong=wrong):
+                def output(*command):
+                    return wrong if command == args else self.tool_output(*command)
+                with patch.object(VERIFY, "command", side_effect=output):
+                    with self.assertRaises(ValueError):
+                        VERIFY.verify_toolchain(EXPECTED)
+
+    def metadata(self):
+        return {
+            "CFBundleIdentifier": "com.faderline.app",
+            "CFBundleExecutable": "Faderline",
+            "DTSDKName": "macosx26.5",
+            "DTXcode": "2660",
+            "DTXcodeBuild": "17F113",
+            "LSMinimumSystemVersion": "15.0",
+        }
+
+    def check_bundle(self, metadata, architecture="arm64"):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "Faderline.app"
+            (app / "Contents").mkdir(parents=True)
+            with (app / "Contents/Info.plist").open("wb") as destination:
+                plistlib.dump(metadata, destination)
+            with patch.object(VERIFY, "command", return_value=architecture) as command:
+                VERIFY.verify_app(app, EXPECTED)
+                command.assert_called_once_with(
+                    "lipo", "-archs", str(app / "Contents/MacOS/Faderline")
+                )
+
+    def test_built_app_metadata_and_arm64(self):
+        self.check_bundle(self.metadata())
+
+    def test_wrong_or_missing_metadata_fails(self):
+        for key, value in self.metadata().items():
+            for wrong in (None, f"{value}-wrong"):
+                with self.subTest(key=key, wrong=wrong):
+                    metadata = self.metadata()
+                    if wrong is None:
+                        del metadata[key]
+                    else:
+                        metadata[key] = wrong
+                    with self.assertRaises(ValueError):
+                        self.check_bundle(metadata)
+
+    def test_intel_and_universal_bundles_fail(self):
+        for architecture in ("x86_64", "arm64 x86_64"):
+            with self.subTest(architecture=architecture):
+                with self.assertRaises(ValueError):
+                    self.check_bundle(self.metadata(), architecture)
+
+    def test_unset_expectation_fails_before_tool_invocation(self):
+        for key in EXPECTED:
+            env = dict(EXPECTED)
+            del env[key]
+            with self.subTest(key=key), patch.dict(os.environ, env, clear=True):
+                with patch.object(VERIFY.sys, "argv", [str(SCRIPT)]):
+                    with patch.object(VERIFY, "command") as command:
+                        self.assertEqual(VERIFY.main(), 1)
+                        command.assert_not_called()
+
+    def test_failed_tool_command_is_not_success(self):
+        with patch.dict(os.environ, EXPECTED, clear=True):
+            with patch.object(VERIFY.sys, "argv", [str(SCRIPT)]):
+                with patch.object(
+                    VERIFY, "command",
+                    side_effect=subprocess.CalledProcessError(1, ["xcodebuild"]),
+                ):
+                    self.assertEqual(VERIFY.main(), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

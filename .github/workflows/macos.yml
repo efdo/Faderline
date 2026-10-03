@@ -6,11 +6,20 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: macos-15
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      EXPECTED_XCODE_VERSION: '26.6'
+      EXPECTED_XCODE_BUILD: '17F113'
+      EXPECTED_DTXCODE: '2660'
+      EXPECTED_MACOS_SDK_VERSION: '26.5'
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Report and verify selected build environment
+        run: python3 scripts/verify-build-environment.py
 
       - name: Build package
         run: swift build
@@ -24,5 +33,11 @@ jobs:
       - name: Test packaging argument validation
         run: python3 -m unittest discover -s Tests/ReleasePackagingTests -v
 
+      - name: Test build environment verification
+        run: python3 -m unittest discover -s Tests/BuildEnvironmentTests -v
+
       - name: Build and inspect app-only development DMG
         run: bash scripts/package-app.sh --version 0.0.0 --unsigned-development
+
+      - name: Verify packaged app SDK and deployment requirements
+        run: python3 scripts/verify-build-environment.py --app dist/*/Faderline.app

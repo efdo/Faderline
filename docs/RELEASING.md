@@ -17,6 +17,49 @@ installer, driver lifecycle change, automatic updater, or Sparkle integration.
 - Packaging uses macOS's built-in `xcodebuild`, `ditto`, `codesign`, `hdiutil`,
   and `shasum`; no system-wide packaging tools need to be installed.
 
+## CI build environment
+
+Both CI and release packaging use the **stable GitHub-hosted `macos-26`
+Apple Silicon runner**, explicitly selecting **Xcode 26.6 (17F113)** with
+the **macOS 26.5 SDK** via job-scoped `DEVELOPER_DIR`. The documented image
+currently runs macOS 26.6.2; the runner OS patch/image can change as GitHub
+rolls out updates. This does **not** raise the app's minimum OS: packages
+remain **arm64-only, macOS 15.0+**, with Swift 5 language mode.
+Xcode 26.6's Swift 6.3 compiler supports that language mode and the package's
+Swift 6.0 tools requirement.
+
+Checked against the official [runner labels](https://github.com/actions/runner-images#available-images),
+[installed Xcode/SDK inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md#xcode),
+and [Apple's compatibility table](https://developer.apple.com/xcode/system-requirements)
+on 2026-10-03. Apple has released Xcode 27/macOS 27 SDK, but GitHub's
+[`xcode-27` image is still preview](https://github.com/actions/runner-images/issues/14404).
+It is intentionally excluded: 26.6 is the newest stable Xcode available on
+GitHub's GA macOS image, not the latest Apple release or local installation.
+
+The workflows pin the runner major, Xcode version/build and SDK rather than
+using `macos-latest`, the runner's default Xcode, or an automatically advancing
+`latest-stable` selector. `DEVELOPER_DIR` selects the documented preinstalled
+path without needing `setup-xcode` or changing the system developer selection.
+This favors an auditable toolchain over automatic upgrades; update the pins
+in **both workflows** and their verification tests when a newer stable hosted
+toolchain is available. Runner images themselves are not immutable, and
+removal/replacement of the pinned Xcode intentionally fails CI rather than
+silently changing the SDK.
+
+[`scripts/verify-build-environment.py`](../scripts/verify-build-environment.py)
+logs the actual runner image, macOS, architecture, Xcode, Swift and SDK before
+building. After packaging, it requires the bundle's `DTSDKName=macosx26.5`,
+`DTXcode=2660`, `DTXcodeBuild=17F113`, `LSMinimumSystemVersion=15.0` and
+arm64-only executable before uploading any artifacts. Release retries take
+this verification tooling from the **workflow revision**, while app source
+and packaging still come from the **requested release tag**, so older
+published tags need not contain the new verifier.
+
+Local packaging continues to use the selected local Xcode/`DEVELOPER_DIR`;
+it does not install the CI toolchain. A newer linked SDK may change native
+control appearance on newer macOS, but this update neither restyles controls
+nor establishes that the downloaded release's UI matches a local build.
+
 ## Local unsigned development packaging
 
 From the repository root:
@@ -82,8 +125,8 @@ Nothing is published by the local packaging command.
    must contain the packaging script and workflow.
 3. Add release notes and publish. For unsigned builds, mark it as a
    **prerelease** and identify it as unsigned development.
-4. Actions builds on `macos-15`, runs the SPM and standalone tests, invokes
-   the same packaging script (including its Xcode Release build and DMG
+4. Actions builds on `macos-26` with the pinned Xcode/SDK above, runs the SPM
+   and standalone tests, invokes the same packaging script (including its Xcode Release build and DMG
    inspection), and attaches the `.dmg` and `.sha256` under the release's
    **Assets**. It also retains those two files as workflow artifacts.
 
