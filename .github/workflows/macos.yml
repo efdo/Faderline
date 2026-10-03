@@ -21,8 +21,13 @@ jobs:
       - name: Run XCTest suite
         run: swift test
 
-      - name: Test packaging argument validation
-        run: python3 -m unittest discover -s Tests/ReleasePackagingTests -v
+      - name: Prepare isolated presentation tooling
+        run: |
+          python3 -m venv .build/packaging-venv
+          .build/packaging-venv/bin/python -m pip install -r scripts/packaging-requirements.txt
+
+      - name: Test app packaging and Finder presentation
+        run: .build/packaging-venv/bin/python -m unittest discover -s Tests/ReleasePackagingTests -v
 
       - name: Build and inspect app-only development DMG
         run: bash scripts/package-app.sh --version 0.0.0 --unsigned-development
