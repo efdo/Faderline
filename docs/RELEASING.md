@@ -25,8 +25,8 @@ the **macOS 26.5 SDK** via job-scoped `DEVELOPER_DIR`. The documented image
 currently runs macOS 26.6.2; the runner OS patch/image can change as GitHub
 rolls out updates. This does **not** raise the app's minimum OS: packages
 remain **arm64-only, macOS 15.0+**, with Swift 5 language mode.
-Xcode 26.6's Swift 6.3 compiler supports that language mode and the package's
-Swift 6.0 tools requirement.
+Xcode 26.6's **Swift 6.3.3 compiler (`swiftlang-6.3.3.1.3`)** supports that
+language mode and the package's Swift 6.0 tools requirement.
 
 Checked against the official [runner labels](https://github.com/actions/runner-images#available-images),
 [installed Xcode/SDK inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md#xcode),
@@ -36,7 +36,8 @@ on 2026-10-03. Apple has released Xcode 27/macOS 27 SDK, but GitHub's
 It is intentionally excluded: 26.6 is the newest stable Xcode available on
 GitHub's GA macOS image, not the latest Apple release or local installation.
 
-The workflows pin the runner major, Xcode version/build and SDK rather than
+The workflows pin the runner major, Xcode version/build, Swift version/build
+and SDK rather than
 using `macos-latest`, the runner's default Xcode, or an automatically advancing
 `latest-stable` selector. `DEVELOPER_DIR` selects the documented preinstalled
 path without needing `setup-xcode` or changing the system developer selection.
@@ -48,7 +49,10 @@ silently changing the SDK.
 
 [`scripts/verify-build-environment.py`](../scripts/verify-build-environment.py)
 logs the actual runner image, macOS, architecture, Xcode, Swift and SDK before
-building. After packaging, it requires the bundle's `DTSDKName=macosx26.5`,
+building. It parses and checks `swift --version` from the same `PATH` used by
+the following SPM commands, rejecting a different compiler version/build or
+unrecognized output even when Xcode/SDK match. After packaging, it requires
+the bundle's `DTSDKName=macosx26.5`,
 `DTXcode=2660`, `DTXcodeBuild=17F113`, `LSMinimumSystemVersion=15.0` and
 arm64-only executable before uploading any artifacts. Release retries take
 this verification tooling from the **workflow revision**, while app source

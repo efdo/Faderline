@@ -4,6 +4,7 @@ import io
 import os
 from pathlib import Path
 import plistlib
+import re
 import subprocess
 import tempfile
 import unittest
@@ -20,6 +21,8 @@ EXPECTED = {
     "EXPECTED_XCODE_BUILD": "17F113",
     "EXPECTED_DTXCODE": "2660",
     "EXPECTED_MACOS_SDK_VERSION": "26.5",
+    "EXPECTED_SWIFT_VERSION": "6.3.3",
+    "EXPECTED_SWIFT_BUILD": "swiftlang-6.3.3.1.3",
 }
 
 
@@ -39,7 +42,12 @@ class BuildEnvironmentTests(unittest.TestCase):
             ("uname", "-m"): "arm64",
             ("xcodebuild", "-version"): "Xcode 26.6\nBuild version 17F113",
             ("xcrun", "--sdk", "macosx", "--show-sdk-version"): "26.5",
-            ("swift", "--version"): "Apple Swift version 6.3",
+            ("swift", "--version"): (
+                "Apple Swift version 6.3.3 "
+                "(swiftlang-6.3.3.1.3 clang-2100.1.1.101)\n"
+                "Target: arm64-apple-macosx26.0\n"
+                "swift-driver version: 1.148.6"
+            ),
         }[args]
 
     def test_selected_stable_toolchain(self):
@@ -60,6 +68,41 @@ class BuildEnvironmentTests(unittest.TestCase):
                 with patch.object(VERIFY, "command", side_effect=output):
                     with self.assertRaises(ValueError):
                         VERIFY.verify_toolchain(EXPECTED)
+
+    def test_wrong_swift_version_build_or_output_fails(self):
+        for wrong in (
+            "Apple Swift version 6.4 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)",
+            "Apple Swift version 6.3.3 (swiftlang-6.3.3.99.1 clang-2100.1.1.101)",
+            "Apple Swift version 6.3.3-dev (swiftlang-6.3.3.1.3 clang-2100.1.1.101)",
+            "Swift version 6.3.3 (swift-6.3.3-RELEASE)",
+            "Apple Swift version 6.3.3",
+            "",
+        ):
+            with self.subTest(wrong=wrong):
+                def output(*args):
+                    return wrong if args == ("swift", "--version") else self.tool_output(*args)
+                with patch.object(VERIFY, "command", side_effect=output):
+                    with self.assertRaises(ValueError):
+                        VERIFY.verify_toolchain(EXPECTED)
+
+    def test_mismatched_path_swift_returns_failure(self):
+        def output(*args):
+            if args == ("swift", "--version"):
+                return "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)"
+            return self.tool_output(*args)
+        with patch.dict(os.environ, EXPECTED, clear=True):
+            with patch.object(VERIFY.sys, "argv", [str(SCRIPT)]):
+                with patch.object(VERIFY, "command", side_effect=output) as command:
+                    self.assertEqual(VERIFY.main(), 1)
+                    command.assert_any_call("swift", "--version")
+
+    def test_workflows_share_toolchain_pins(self):
+        for filename in ("macos.yml", "release.yml"):
+            with self.subTest(filename=filename):
+                workflow = (ROOT / ".github/workflows" / filename).read_text()
+                pins = dict(re.findall(r"^      (EXPECTED_\w+): '([^']+)'$",
+                                       workflow, re.MULTILINE))
+                self.assertEqual(pins, EXPECTED)
 
     def metadata(self):
         return {

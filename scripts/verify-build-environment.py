@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import plistlib
+import re
 import subprocess
 import sys
 
@@ -37,7 +38,16 @@ def verify_toolchain(expected):
         command("xcrun", "--sdk", "macosx", "--show-sdk-version"),
         expected["EXPECTED_MACOS_SDK_VERSION"],
     )
-    print(command("swift", "--version"), flush=True)
+    swift = command("swift", "--version")
+    print(swift, flush=True)
+    compiler = re.fullmatch(
+        r"Apple Swift version (\S+) \((swiftlang-\S+) clang-\S+\)",
+        swift.partition("\n")[0],
+    )
+    if compiler is None:
+        raise ValueError("Could not parse the Apple Swift compiler version/build")
+    require_equal("Swift version", compiler.group(1), expected["EXPECTED_SWIFT_VERSION"])
+    require_equal("Swift build", compiler.group(2), expected["EXPECTED_SWIFT_BUILD"])
 
 
 def verify_app(app, expected):
@@ -70,6 +80,7 @@ def main():
     keys = (
         "EXPECTED_XCODE_VERSION", "EXPECTED_XCODE_BUILD",
         "EXPECTED_DTXCODE", "EXPECTED_MACOS_SDK_VERSION",
+        "EXPECTED_SWIFT_VERSION", "EXPECTED_SWIFT_BUILD",
     )
     expected = {}
     try:
