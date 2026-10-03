@@ -93,9 +93,28 @@ This replaces an earlier AVAudioEngine approach that produced crackling due to i
 
 ## Releasing
 
-Build an app-only Release DMG locally:
+### Install or update
+
+Download the DMG for **macOS 15+ / Apple Silicon** from
+[Releases](https://github.com/efdo/AudioMixer/releases).
+Drag Faderline to Applications. To update, quit Faderline normally, then
+replace the app. Eject the disk image and open Faderline from Applications.
+Grant microphone permission when prompted. Updates are manual.
+
+The compact disk image shows just **Faderline.app** and **Applications**,
+with a simple arrow between them; there is no README file to navigate.
+Public DMGs have no background text. Development images retain a visible
+unsigned/not-notarized warning. No virtual microphone driver is included or managed.
+Unsigned development downloads are clearly labeled and may be blocked by
+Gatekeeper; they are not public-distribution builds.
+
+### Build a release
+
+Set up the project-local packaging tools, then build an app-only Release DMG:
 
 ```bash
+python3 -m venv .build/packaging-venv
+.build/packaging-venv/bin/python -m pip install -r scripts/packaging-requirements.txt
 bash scripts/package-app.sh --version 1.2.3 --unsigned-development
 ```
 
@@ -106,13 +125,8 @@ labeled **unsigned development prereleases**, not signed public releases.
 Developer ID signing and notarization require configured credentials and never
 fall back to unsigned output.
 
-Packages contain **Faderline.app** for **macOS 15+ / Apple Silicon**, an
-Applications shortcut, and installation information only; no virtual microphone
-driver is included or managed. Install by dragging the app to Applications.
-For manual updates, **quit Faderline cleanly with Command-Q and wait for exit**
-before replacing the app. There is no automatic updater.
 See [`docs/RELEASING.md`](docs/RELEASING.md) for versioning, packaging, signing,
-installation, and release instructions.
+checksum verification, clean shutdown precautions, and release instructions.
 
 ## For AI agents
 

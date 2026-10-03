@@ -15,7 +15,10 @@ installer, driver lifecycle change, automatic updater, or Sparkle integration.
   not just Command Line Tools. Select that Xcode installation as the active
   developer directory, or set `DEVELOPER_DIR` for the command.
 - Packaging uses macOS's built-in `xcodebuild`, `ditto`, `codesign`, `hdiutil`,
-  and `shasum`; no system-wide packaging tools need to be installed.
+  `swift`/AppKit, and `shasum`, plus Python 3.9+ with the pinned `ds-store`
+  and `mac-alias` libraries in a **project-local venv**. No global Python
+  packages, GUI session, Finder automation, or system-wide packaging tools
+  are required.
 
 ## CI build environment
 
@@ -58,6 +61,9 @@ arm64-only executable before uploading any artifacts. Release retries take
 this verification tooling from the **workflow revision**, while app source
 and packaging still come from the **requested release tag**, so older
 published tags need not contain the new verifier.
+Presentation dependencies are installed only when the release tag contains
+their requirements file. Earlier tags retain their dependency-free packaging
+tests; newer tags require the venv and never fall back when it is missing.
 
 Local packaging continues to use the selected local Xcode/`DEVELOPER_DIR`;
 it does not install the CI toolchain. A newer linked SDK may change native
@@ -69,6 +75,8 @@ nor establishes that the downloaded release's UI matches a local build.
 From the repository root:
 
 ```bash
+python3 -m venv .build/packaging-venv
+.build/packaging-venv/bin/python -m pip install -r scripts/packaging-requirements.txt
 bash scripts/package-app.sh --version 1.2.3 --build-number 42 --unsigned-development
 ```
 
@@ -82,10 +90,33 @@ dist/Faderline-1.2.3-arm64-unsigned-development/
   Faderline-1.2.3-arm64-unsigned-development.sha256
 ```
 
-The compressed, read-only DMG contains `Faderline.app`, an `Applications`
-shortcut pointing to `/Applications`, and installation/signing information
-in `README.txt`. Packaging verifies bundle metadata, architecture, signatures,
-the image integrity, and the mounted app/shortcut before returning success.
+The compressed, read-only DMG shows only `Faderline.app` on the left and an
+`Applications` shortcut pointing to `/Applications` on the right. It omits
+`README.txt` entirely. Its 560×340 Finder icon-view window uses 96-point
+icons at (150, 162) and (410, 162), with the toolbar, sidebar, status bar and
+path bar hidden. A locally rendered neutral background contains a centered
+arrow with no decorative or instructional text on signed public images.
+Installation/update instructions and platform requirements stay in the project
+documentation, outside the DMG.
+The background includes 1×/2× TIFF representations for Retina displays.
+
+The signed volume title is `Faderline X.Y.Z`; unsigned titles append
+`- UNSIGNED DEVELOPMENT`, and the unsigned background visibly repeats
+`UNSIGNED DEVELOPMENT` and `Not Developer ID signed or notarized`.
+This is the only background text on local development images.
+Asset/directory names retain the explicit signing mode.
+Presentation is generated directly on a temporary writable HFS+ image:
+the hidden `.DS_Store` stores window bounds, view options and icon coordinates,
+and its alias references the hidden `.background.tiff` **on that volume**, not
+a CI staging path. The image is then detached and compressed to UDZO
+**before final DMG signing, notarization, stapling and checksumming**.
+Nothing inside the already signed app bundle is modified.
+
+Packaging verifies bundle metadata, architecture, signatures, the image
+integrity, exactly two visible root items, the actual Finder bounds/icon
+settings/positions, and the background alias's volume/file IDs after remounting.
+Presentation generation or inspection failures stop packaging; there is no
+unstyled-image fallback.
 It does not install or launch the app. Build scratch data is removed on exit.
 `dist/`, disk images, archives, and `.build/` are ignored by Git.
 
@@ -93,7 +124,8 @@ Use `--output /path/to/artifacts` to change the output parent directory.
 Existing version/mode directories are **not overwritten**; use another output
 directory for a repeat build. Run `bash scripts/package-app.sh --help` for options.
 With the same source, version, build number and Xcode/SDK, this repeats the
-same build/packaging procedure. DMG filesystem metadata and signing/notarization
+same headless build/packaging procedure and explicit layout. DMG filesystem
+metadata and signing/notarization
 timestamps mean artifacts are **not guaranteed byte-for-byte identical**;
 checksums describe the actual final downloadable DMG.
 
@@ -103,6 +135,18 @@ Apple Silicon requires executable signatures, so the script applies an
 notarized and Gatekeeper may refuse to open a downloaded copy. Checksums prove
 file integrity, not publisher identity or Gatekeeper approval. Only use these
 builds for trusted development; do not disable Gatekeeper system-wide.
+
+Run the packaging tests with the same venv:
+
+```bash
+.build/packaging-venv/bin/python -m unittest discover -s Tests/ReleasePackagingTests -v
+```
+
+`PACKAGING_PYTHON=/absolute/path/to/venv/bin/python` can select another isolated
+environment containing the pinned requirements. Both macOS workflows set up
+the project-local venv before packaging and tests. Structural/signed-path mock
+tests do not prove Apple notarization; only an explicitly authorized signed
+release can exercise that service.
 
 ## Versioning
 
@@ -226,8 +270,9 @@ shasum -a 256 -c Faderline-1.2.3-arm64-unsigned-development.sha256
 
 For a signed public release, use its `developer-id-notarized.sha256` filename.
 Open the DMG and drag **Faderline.app** onto the **Applications** shortcut.
-Eject the DMG and launch the app from Applications, granting microphone
-permission when prompted.
+The user-facing instructions are: “Drag Faderline to Applications. To update,
+quit Faderline normally, then replace the app. Eject the disk image and open
+Faderline from Applications.” Grant microphone permission when prompted.
 
 To update, first choose **Faderline → Quit** or press **Command-Q**, and wait
 for the app to exit cleanly. Then drag the new app to Applications and confirm

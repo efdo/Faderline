@@ -90,13 +90,24 @@ jobs:
           gh release edit "$TAG" --title "$title" --prerelease \
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
+      - name: Prepare isolated presentation tooling
+        if: ${{ hashFiles('scripts/packaging-requirements.txt') != '' }}
+        run: |
+          python3 -m venv .build/packaging-venv
+          .build/packaging-venv/bin/python -m pip install -r scripts/packaging-requirements.txt
+
       - name: Build package and run repository tests
         run: |
           set -euo pipefail
           swift build
           swift Tests/FaderlineTests/FaderlineTests.swift
           swift test
-          python3 -m unittest discover -s Tests/ReleasePackagingTests -v
+          if [[ -f scripts/packaging-requirements.txt ]]; then
+            .build/packaging-venv/bin/python -m unittest discover -s Tests/ReleasePackagingTests -v
+          else
+            echo "Release tag predates presentation tooling; running its dependency-free packaging tests."
+            python3 -m unittest discover -s Tests/ReleasePackagingTests -v
+          fi
           python3 -m unittest discover -s .ci-toolchain/Tests/BuildEnvironmentTests -v
 
       - name: Prepare Developer ID signing and notarization

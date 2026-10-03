@@ -7,6 +7,7 @@ import plistlib
 import re
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -103,6 +104,49 @@ class BuildEnvironmentTests(unittest.TestCase):
                 pins = dict(re.findall(r"^      (EXPECTED_\w+): '([^']+)'$",
                                        workflow, re.MULTILINE))
                 self.assertEqual(pins, EXPECTED)
+
+    def test_release_tests_support_old_tags_without_dependency_fallback(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        step = workflow.split("      - name: Build package and run repository tests\n", 1)[1]
+        step = step.split("\n      - name:", 1)[0]
+        script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+        self.assertIn("if: ${{ hashFiles('scripts/packaging-requirements.txt') != '' }}",
+                      workflow)
+        for modern, venv in ((False, False), (True, True), (True, False)):
+            with self.subTest(modern=modern, venv=venv):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    tools = root / "tools"
+                    tools.mkdir()
+                    calls = root / "calls.txt"
+                    for name in ("swift", "python3", ".build/packaging-venv/bin/python"):
+                        if name.startswith(".build") and not venv:
+                            continue
+                        tool = root / name if name.startswith(".build") else tools / name
+                        tool.parent.mkdir(parents=True, exist_ok=True)
+                        tool.write_text(
+                            f"#!{VERIFY.sys.executable}\n"
+                            "from pathlib import Path\n"
+                            f"with Path({str(calls)!r}).open('a') as output:\n"
+                            f"    output.write({name!r} + '\\n')\n"
+                        )
+                        tool.chmod(0o755)
+                    if modern:
+                        (root / "scripts").mkdir()
+                        (root / "scripts/packaging-requirements.txt").touch()
+                    result = subprocess.run(
+                        ["bash", "-euo", "pipefail", "-c", script], cwd=root,
+                        env=dict(os.environ, PATH=f"{tools}:{os.environ['PATH']}"),
+                        capture_output=True, text=True,
+                    )
+                    actual = calls.read_text().splitlines()
+                    if modern and not venv:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertNotIn("python3", actual)
+                    else:
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        expected_python = ".build/packaging-venv/bin/python" if modern else "python3"
+                        self.assertEqual(actual, ["swift"] * 3 + [expected_python, "python3"])
 
     def metadata(self):
         return {
