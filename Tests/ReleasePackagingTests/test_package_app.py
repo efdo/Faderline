@@ -21,6 +21,12 @@ presentation = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(presentation)
 
 
+def workflow_step_script(workflow, name):
+    marker = f"      - name: {name}\n"
+    step = workflow.split(marker, 1)[1].split("\n      - name:", 1)[0]
+    return textwrap.dedent(step.split("        run: |\n", 1)[1])
+
+
 class PackagingArgumentTests(unittest.TestCase):
     def run_script(self, *args, env=None):
         return subprocess.run(
@@ -235,9 +241,7 @@ class PackagingArgumentTests(unittest.TestCase):
 class ReleaseTitleTests(unittest.TestCase):
     def test_unsigned_label_preserves_release_name_or_falls_back_to_tag(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
-        step = workflow.split("      - name: Label unsigned development release\n", 1)[1]
-        step = step.split("\n      - name:", 1)[0]
-        script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+        script = workflow_step_script(workflow, "Label unsigned development release")
         banner = (
             "**Unsigned development artifacts: NOT Developer ID signed or notarized. "
             "macOS Gatekeeper may block these builds.**"
@@ -285,6 +289,159 @@ class ReleaseTitleTests(unittest.TestCase):
                 updated_notes = (tools / "release-notes.md").read_text()
                 self.assertEqual(updated_notes.count(banner), 1)
                 self.assertIn("Original release notes", updated_notes)
+
+
+class SignedReleaseLabelTests(unittest.TestCase):
+    def test_signed_label_preserves_notes_and_adds_banner_once(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        script = workflow_step_script(workflow, "Label signed release")
+        banner = "**Signed with Developer ID and notarized by Apple.**"
+
+        for notes in (
+            "Original release notes",
+            f"{banner}\n\nOriginal release notes",
+        ):
+            with self.subTest(notes=notes), tempfile.TemporaryDirectory() as temporary:
+                tools = Path(temporary)
+                gh = tools / "gh"
+                gh.write_text(
+                    f"#!{sys.executable}\n"
+                    + textwrap.dedent("""
+                        import json, os, sys
+                        from pathlib import Path
+                        args = sys.argv[1:]
+                        if args[:2] == ['release', 'view']:
+                            print(os.environ['RELEASE_NOTES'])
+                        elif args[:2] == ['release', 'edit']:
+                            Path(os.environ['EDIT_CAPTURE']).write_text(json.dumps(args))
+                        else:
+                            raise SystemExit('Unexpected GitHub call')
+                    """)
+                )
+                gh.chmod(0o755)
+                capture = tools / "edit.json"
+                env = dict(
+                    os.environ,
+                    PATH=f"{tools}:{os.environ['PATH']}",
+                    TAG="v1.2.3",
+                    RUNNER_TEMP=str(tools),
+                    RELEASE_NOTES=notes,
+                    EDIT_CAPTURE=str(capture),
+                )
+                result = subprocess.run(
+                    ["bash", "-euo", "pipefail", "-c", script],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                args = json.loads(capture.read_text())
+                self.assertEqual(
+                    args,
+                    [
+                        "release", "edit", "v1.2.3", "--notes-file",
+                        str(tools / "release-notes.md"),
+                    ],
+                )
+                updated_notes = (tools / "release-notes.md").read_text()
+                self.assertEqual(updated_notes.count(banner), 1)
+                self.assertIn("Original release notes", updated_notes)
+
+
+class ReleaseAssetUploadTests(unittest.TestCase):
+    def setUp(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        self.script = workflow_step_script(
+            workflow, "Attach DMG and checksum to GitHub Release"
+        )
+
+    def run_upload(self, temporary, dmg_count):
+        root = Path(temporary)
+        tools = root / "tools"
+        tools.mkdir()
+        capture = root / "upload.json"
+        gh = tools / "gh"
+        gh.write_text(
+            f"#!{sys.executable}\n"
+            + textwrap.dedent("""
+                import json, os, sys
+                from pathlib import Path
+                Path(os.environ['UPLOAD_CAPTURE']).write_text(
+                    json.dumps(sys.argv[1:])
+                )
+            """)
+        )
+        gh.chmod(0o755)
+
+        package = root / "dist" / "Faderline-1.2.3-arm64-developer-id-notarized"
+        package.mkdir(parents=True)
+        for index in range(dmg_count):
+            (package / f"package-{index}.dmg").write_bytes(
+                f"verified package {index}".encode()
+            )
+
+        env = dict(
+            os.environ,
+            PATH=f"{tools}:{os.environ['PATH']}",
+            TAG="v1.2.3",
+            RUNNER_TEMP=str(root / "runner"),
+            UPLOAD_CAPTURE=str(capture),
+        )
+        result = subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", self.script],
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        return result, root, capture
+
+    def test_upload_uses_normalized_names_and_matching_checksum(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result, root, capture = self.run_upload(temporary, 1)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            assets = root / "runner" / "release-assets"
+            dmg = assets / "Faderline-1.2.3.dmg"
+            checksum = assets / "Faderline-1.2.3.sha256"
+            self.assertTrue(dmg.is_file())
+            self.assertTrue(checksum.is_file())
+            self.assertEqual(dmg.read_bytes(), b"verified package 0")
+            self.assertEqual(
+                subprocess.run(
+                    ["shasum", "-a", "256", "-c", checksum.name],
+                    cwd=assets, capture_output=True, text=True,
+                ).returncode,
+                0,
+            )
+
+            args = json.loads(capture.read_text())
+            self.assertEqual(
+                args,
+                [
+                    "release", "upload", "v1.2.3", str(dmg), str(checksum),
+                    "--clobber",
+                ],
+            )
+            self.assertNotIn("arm64", " ".join(args))
+            self.assertNotIn("notarized", " ".join(args))
+
+    def test_upload_rejects_zero_or_multiple_dmgs(self):
+        for dmg_count in (0, 2):
+            with self.subTest(dmg_count=dmg_count), tempfile.TemporaryDirectory() as temporary:
+                result, root, capture = self.run_upload(temporary, dmg_count)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Expected exactly one packaged DMG", result.stderr)
+                self.assertFalse(capture.exists())
+                self.assertFalse((root / "runner" / "release-assets").exists())
+
+    def test_signed_status_is_updated_after_package_and_before_upload(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        label = workflow.index("      - name: Label signed release\n")
+        upload = workflow.index("      - name: Attach DMG and checksum to GitHub Release\n")
+        package = workflow.index("      - name: Package Developer ID signed and notarized DMG\n")
+        self.assertGreater(label, package)
+        self.assertLess(label, upload)
 
 
 @unittest.skipUnless(sys.platform == "darwin", "Requires macOS disk images and AppKit")
