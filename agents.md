@@ -215,6 +215,15 @@ main output) aligned against a left-hand row-label gutter
 - **Pan knobs:** 36-point diameter with L/R markers, a drag-only center snap
   within +/-0.08 pan, and double-click to recenter. The snap is UI-side only;
   persisted pan values and the engine's pan law are unchanged.
+- **Device/channel selectors:** `ConsolePicker` wraps a native `NSPopUpButton`
+  with standard keyboard navigation and focus rings. `InitialWindowFocus` clears
+  automatic focus only when each window first opens; subsequent keyboard focus
+  remains visible and is preserved when switching back to the app. Both rows
+  fill the same strip width and show the full selected label in a hover tooltip;
+  dB fields also expose their current text on hover. Escape clears control focus
+  (after dismissing an open selector menu); Tab resumes normal focus navigation.
+  Pan tooltips show Center or a left/right percentage. Mute/Solo tooltips show
+  the current state and describe the click action.
 
 ---
 

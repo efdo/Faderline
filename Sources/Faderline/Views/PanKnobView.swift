@@ -62,6 +62,13 @@ struct PanKnobView: View {
             )
         }
         .aspectRatio(1, contentMode: .fit)
+        .help(Self.helpText(for: pan))
+    }
+
+    static func helpText(for pan: Float) -> String {
+        if pan == 0 { return "Pan: Center" }
+        let amount = String(format: "%.0f", abs(pan) * 100)
+        return "Pan: \(amount)% \(pan < 0 ? "Left" : "Right")"
     }
 
     static func pan(forDragTranslation translation: CGFloat, startPan: Float, diameter: CGFloat) -> Float {
