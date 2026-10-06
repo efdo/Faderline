@@ -73,21 +73,6 @@ jobs:
           gh release edit "$TAG" --title "$title" --prerelease \
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
-      - name: Label signed release
-        if: env.SIGNING_MODE == 'developer-id'
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/original-notes.md"
-          banner="**Signed with Developer ID and notarized by Apple.**"
-          if grep -Fq "$banner" "$RUNNER_TEMP/original-notes.md"; then
-            cp "$RUNNER_TEMP/original-notes.md" "$RUNNER_TEMP/release-notes.md"
-          else
-            printf '%s\n\n' "$banner" > "$RUNNER_TEMP/release-notes.md"
-            cat "$RUNNER_TEMP/original-notes.md" >> "$RUNNER_TEMP/release-notes.md"
-          fi
-          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
-
       - name: Build package and run repository tests
         run: |
           set -euo pipefail
@@ -176,6 +161,21 @@ jobs:
           )
           gh release upload "$TAG" "$assets/$dmg_name" \
             "$assets/Faderline-${TAG#v}.sha256" --clobber
+
+      - name: Label signed release
+        if: env.SIGNING_MODE == 'developer-id'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/original-notes.md"
+          banner="**Signed with Developer ID and notarized by Apple.**"
+          if grep -Fq "$banner" "$RUNNER_TEMP/original-notes.md"; then
+            cp "$RUNNER_TEMP/original-notes.md" "$RUNNER_TEMP/release-notes.md"
+          else
+            printf '%s\n\n' "$banner" > "$RUNNER_TEMP/release-notes.md"
+            cat "$RUNNER_TEMP/original-notes.md" >> "$RUNNER_TEMP/release-notes.md"
+          fi
+          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
 
       - name: Remove temporary signing credentials
         if: always() && env.SIGNING_MODE == 'developer-id'
