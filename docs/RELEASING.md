@@ -27,9 +27,10 @@ Before recommending a new release:
 - Update the signed download links and version in the README and
   [getting-started guide](GETTING_STARTED.md); retain the prerelease label when
   applicable and keep unsigned development downloads clearly separate.
-- Add signing-status release notes only after packaging, signing, notarization,
-  and artifact verification succeed; publish those notes before uploading
-  downloadable assets.
+- For Developer ID releases, add the signed/notarized status only after
+  packaging, signing, notarization, and artifact verification succeed; publish
+  that status before uploading downloadable assets. Unsigned-development
+  releases are labeled as unsigned before packaging starts.
 - Check instructions and screenshots against the distributed app and DMG.
   Record the actual app/artifact and macOS versions beside screenshots; refresh
   images when controls or the disk-image presentation change.

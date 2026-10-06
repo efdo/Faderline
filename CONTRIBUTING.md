@@ -25,8 +25,10 @@ xcodebuild -project Faderline.xcodeproj -scheme Faderline -configuration Debug b
 
 The Xcode project and Swift Package Manager build are both maintained. Run
 checks relevant to your change; for a non-trivial change, run the full set
-above. If your change affects the app's runtime behavior, launch it and check
-the affected path when you can.
+above. After those checks, launch the app once to confirm the UI/runtime path
+starts. Before launching, stop any running Faderline or legacy AudioMixer
+instances with `SIGTERM` using their exact PIDs and wait for them to exit
+normally. Never use `SIGKILL`.
 
 ## Changes to audio behavior
 
