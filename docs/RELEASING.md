@@ -1,5 +1,8 @@
 # App-only releases
 
+This guide is for maintainers. For downloading, installing, and using the app,
+see [Getting started](GETTING_STARTED.md).
+
 The repository is named AudioMixer; the current app is **Faderline.app**.
 Release packaging preserves that name and the `com.faderline.app` bundle
 identifier. It builds only the mixer app: no virtual microphone driver is
@@ -16,6 +19,21 @@ installer, driver lifecycle change, automatic updater, or Sparkle integration.
   developer directory, or set `DEVELOPER_DIR` for the command.
 - Packaging uses macOS's built-in `xcodebuild`, `ditto`, `codesign`, `hdiutil`,
   and `shasum`; no system-wide packaging tools need to be installed.
+
+## User documentation checklist
+
+Before recommending a new release:
+
+- Update the signed download links and version in the README and
+  [getting-started guide](GETTING_STARTED.md); retain the prerelease label when
+  applicable and keep unsigned development downloads clearly separate.
+- Check instructions and screenshots against the distributed app and DMG.
+  Record the actual app/artifact and macOS versions beside screenshots; refresh
+  images when controls or the disk-image presentation change.
+- Use real, device-neutral, window-only captures with no private content.
+  Keep text readable, images small, and alt text descriptive.
+- Link to the getting-started guide from future release notes. Installation
+  guidance belongs online, not in the disk-image presentation.
 
 ## Local unsigned development packaging
 
@@ -84,8 +102,12 @@ Nothing is published by the local packaging command.
    **prerelease** and identify it as unsigned development.
 4. Actions builds on `macos-15`, runs the SPM and standalone tests, invokes
    the same packaging script (including its Xcode Release build and DMG
-   inspection), and attaches the `.dmg` and `.sha256` under the release's
-   **Assets**. It also retains those two files as workflow artifacts.
+   inspection), and attaches `Faderline-X.Y.Z.dmg` and
+   `Faderline-X.Y.Z.sha256` under the release's **Assets**. The release asset
+   names are the same for signed and unsigned builds; release notes identify
+   whether the artifacts are signed/notarized or unsigned development. The
+   Actions workflow artifact retains the mode-specific package output for
+   maintainers. Older releases keep their original asset names.
 
 The release is visible while Actions runs; assets appear only after successful
 packaging. Check the Actions run if they are missing. Publishing a draft
@@ -139,7 +161,9 @@ requires `Accepted`, and staples/validates the app ticket. It then creates
 and signs the DMG, notarizes it, staples/validates its ticket, and performs
 Gatekeeper assessments. The copied app retains its ticket for offline
 verification after installation. Successful output uses
-`Faderline-1.2.3-arm64-developer-id-notarized` in the directory/asset names.
+`Faderline-1.2.3-arm64-developer-id-notarized` in the local output directory
+and package filenames. When attached to a GitHub Release, the DMG and checksum
+are published as `Faderline-1.2.3.dmg` and `Faderline-1.2.3.sha256`.
 No credentials means this verification path is **blocked**, not implicitly
 successful. Apple submissions send the app/DMG to Apple's service.
 
@@ -170,14 +194,16 @@ failed release.
 
 ## Installation and manual updates
 
-Download the `.dmg` and matching `.sha256` from the same release. In their
-download directory, verify integrity:
+Download the `Faderline-X.Y.Z.dmg` and matching `Faderline-X.Y.Z.sha256` from
+the same release. In their download directory, verify integrity:
 
 ```bash
-shasum -a 256 -c Faderline-1.2.3-arm64-unsigned-development.sha256
+shasum -a 256 -c Faderline-1.2.3.sha256
 ```
 
-For a signed public release, use its `developer-id-notarized.sha256` filename.
+The downloaded GitHub Release assets use the same simple filenames in either
+signing mode. Check the release notes to confirm whether the build is signed
+and notarized or an unsigned development prerelease before installing it.
 Open the DMG and drag **Faderline.app** onto the **Applications** shortcut.
 Eject the DMG and launch the app from Applications, granting microphone
 permission when prompted.

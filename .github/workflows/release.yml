@@ -73,6 +73,21 @@ jobs:
           gh release edit "$TAG" --title "$title" --prerelease \
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
+      - name: Label signed release
+        if: env.SIGNING_MODE == 'developer-id'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/original-notes.md"
+          banner="**Signed with Developer ID and notarized by Apple.**"
+          if grep -Fq "$banner" "$RUNNER_TEMP/original-notes.md"; then
+            cp "$RUNNER_TEMP/original-notes.md" "$RUNNER_TEMP/release-notes.md"
+          else
+            printf '%s\n\n' "$banner" > "$RUNNER_TEMP/release-notes.md"
+            cat "$RUNNER_TEMP/original-notes.md" >> "$RUNNER_TEMP/release-notes.md"
+          fi
+          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+
       - name: Build package and run repository tests
         run: |
           set -euo pipefail
@@ -145,7 +160,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release upload "$TAG" dist/*/*.dmg dist/*/*.sha256 --clobber
+          dmg_files=(dist/*/*.dmg)
+          [[ ${#dmg_files[@]} -eq 1 && -f "${dmg_files[0]}" ]] || {
+            echo "Expected exactly one packaged DMG." >&2
+            exit 1
+          }
+          assets="$RUNNER_TEMP/release-assets"
+          mkdir -p "$assets"
+          dmg_name="Faderline-${TAG#v}.dmg"
+          cp "${dmg_files[0]}" "$assets/$dmg_name"
+          (
+            cd "$assets"
+            shasum -a 256 "$dmg_name" > "Faderline-${TAG#v}.sha256"
+            shasum -a 256 -c "Faderline-${TAG#v}.sha256"
+          )
+          gh release upload "$TAG" "$assets/$dmg_name" \
+            "$assets/Faderline-${TAG#v}.sha256" --clobber
 
       - name: Remove temporary signing credentials
         if: always() && env.SIGNING_MODE == 'developer-id'

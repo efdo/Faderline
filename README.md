@@ -1,25 +1,43 @@
 # Faderline
 
-A native ARM64 macOS audio mixer built with SwiftUI and CoreAudio for low-latency local routing and monitoring.
+Bring your audio inputs together in one small mixer for your Mac. Choose where
+the sound comes from, adjust the mix, and send it to an output device you
+already use.
 
-## Features
+![Faderline 0.0.3 with two input strips and a main output strip. Meter levels vary with the signal and device.](docs/assets/mixer-overview-v0.0.3.png)
 
-- **2-channel input mixing** (expandable by design) — select any audio input device and map specific hardware channels to the mixer
-- **Configurable main output** — route the mixed signal to any available output device
-- **dB-calibrated faders** — per-input and master level control from silence up to +6 dB
-- **Pan, mute, and solo** — shape and isolate sources without rebuilding the engine
-- **Real-time metering** — input/output RMS meters with peak-hold and clip indication
-- **Device hot-plug** — detects audio device connect/disconnect events
-- **Persistent configuration** — remembers device selections and mix settings across launches
-- **Drift-compensated resampling** — handles 44.1 ↔ 48 kHz conversion and long-run clock drift without clicks
+**[Download the signed v0.0.3 prerelease](https://github.com/efdo/AudioMixer/releases/tag/v0.0.3)**
+ · **[Getting started](docs/GETTING_STARTED.md)**
+ · [All releases](https://github.com/efdo/AudioMixer/releases)
 
-## Requirements
+Requires **macOS 15 (Sequoia) or later, Apple Silicon, and microphone permission**.
+Open the signed release's `.dmg` and drag **Faderline.app** to **Applications**.
+The v0.0.3 prerelease uses the original longer asset name; new releases use
+`Faderline-<version>.dmg`, with signing status stated in the release notes.
+No build tools needed.
 
-- macOS 15.0 (Sequoia) or later
-- Apple Silicon (ARM64)
-- Microphone permission (prompted on first launch)
+## Make it your mix
 
-## Building
+- Mix two input strips into one main output.
+- Choose an input device and its mono channel or stereo pair.
+- Adjust input and output levels with faders, from silence to +6 dB.
+- Pan, mute, or solo your sources.
+- Watch level meters, held peaks, and clip indicators.
+- Keep your device selections and mix settings between launches.
+
+Faderline uses audio devices already available on your Mac. It does not
+automatically capture every app's sound, stream to online services, or include
+or manage a virtual microphone driver.
+
+The [getting-started guide](docs/GETTING_STARTED.md) walks through a safe first
+setup, explains the controls, and covers
+[common problems](docs/GETTING_STARTED.md#if-something-is-missing-or-silent).
+[Updates are manual](docs/GETTING_STARTED.md#update-faderline): quit normally
+with Command-Q and wait for exit before replacing the app.
+
+## Building from source
+
+The sections below are for developers. To use the app, start with the download above.
 
 ### Swift Package Manager
 
@@ -64,13 +82,13 @@ Sources/Faderline/
 ### Signal path
 
 ```
-Input device (e.g. SSL 2)
+Input device
   → AUHAL input unit (explicit render callback)
   → ChannelRingBuffer (lock-free, all hardware channels)
   → DriftCompensatingReader (linear-interp resampler, servo-tuned ratio)
   → vDSP mix (channel map → volume → accumulate)
   → AUHAL output unit
-  → Output device (BlackHole / speakers)
+  → Output device
 ```
 
 This replaces an earlier AVAudioEngine approach that produced crackling due to independent clock domains. The active engine uses AUHAL with explicit render callbacks, circular buffering, and drift-compensated reading to keep capture and output synchronized.
@@ -88,26 +106,9 @@ This replaces an earlier AVAudioEngine approach that produced crackling due to i
 
 ## Releasing
 
-Build an app-only Release DMG locally:
-
-```bash
-bash scripts/package-app.sh --version 1.2.3 --unsigned-development
-```
-
-Publishing a GitHub Release triggers
-[`.github/workflows/release.yml`](.github/workflows/release.yml), which attaches
-the DMG and SHA-256 checksum to that release. By default these are explicitly
-labeled **unsigned development prereleases**, not signed public releases.
-Developer ID signing and notarization require configured credentials and never
-fall back to unsigned output.
-
-Packages contain **Faderline.app** for **macOS 15+ / Apple Silicon**, an
-Applications shortcut, and installation information only; no virtual microphone
-driver is included or managed. Install by dragging the app to Applications.
-For manual updates, **quit Faderline cleanly with Command-Q and wait for exit**
-before replacing the app. There is no automatic updater.
-See [`docs/RELEASING.md`](docs/RELEASING.md) for versioning, packaging, signing,
-installation, and release instructions.
+Maintainers: see [the release guide](docs/RELEASING.md) for versioning,
+app-only DMG packaging, signing, and publishing. Unsigned development packages
+are labeled separately and are not the recommended download for users.
 
 ## For AI agents
 
@@ -117,7 +118,10 @@ If your agent supports provider-specific instruction files (for example, `.githu
 
 ## Contributing
 
-Contributions are welcome, but this project is still tuned around real hardware validation on macOS. Start with the build and test commands above, read [`agents.md`](agents.md) for repository-specific constraints, and expect manual audio-device testing to remain important for changes near the engine or device-management path.
+Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for build
+and pull request guidance, and [`agents.md`](agents.md) for detailed project
+architecture and real-time audio constraints. Changes to audio behavior also
+need validation on real hardware.
 
 ## License
 
