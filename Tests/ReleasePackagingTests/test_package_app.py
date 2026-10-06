@@ -283,6 +283,63 @@ class ReleaseTitleTests(unittest.TestCase):
                 self.assertIn("Original release notes", updated_notes)
 
 
+class SignedReleaseLabelTests(unittest.TestCase):
+    def test_signed_label_preserves_notes_and_adds_banner_once(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        script = workflow_step_script(workflow, "Label signed release")
+        banner = "**Signed with Developer ID and notarized by Apple.**"
+
+        for notes in (
+            "Original release notes",
+            f"{banner}\n\nOriginal release notes",
+        ):
+            with self.subTest(notes=notes), tempfile.TemporaryDirectory() as temporary:
+                tools = Path(temporary)
+                gh = tools / "gh"
+                gh.write_text(
+                    f"#!{sys.executable}\n"
+                    + textwrap.dedent("""
+                        import json, os, sys
+                        from pathlib import Path
+                        args = sys.argv[1:]
+                        if args[:2] == ['release', 'view']:
+                            print(os.environ['RELEASE_NOTES'])
+                        elif args[:2] == ['release', 'edit']:
+                            Path(os.environ['EDIT_CAPTURE']).write_text(json.dumps(args))
+                        else:
+                            raise SystemExit('Unexpected GitHub call')
+                    """)
+                )
+                gh.chmod(0o755)
+                capture = tools / "edit.json"
+                env = dict(
+                    os.environ,
+                    PATH=f"{tools}:{os.environ['PATH']}",
+                    TAG="v1.2.3",
+                    RUNNER_TEMP=str(tools),
+                    RELEASE_NOTES=notes,
+                    EDIT_CAPTURE=str(capture),
+                )
+                result = subprocess.run(
+                    ["bash", "-euo", "pipefail", "-c", script],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                args = json.loads(capture.read_text())
+                self.assertEqual(
+                    args,
+                    [
+                        "release", "edit", "v1.2.3", "--notes-file",
+                        str(tools / "release-notes.md"),
+                    ],
+                )
+                updated_notes = (tools / "release-notes.md").read_text()
+                self.assertEqual(updated_notes.count(banner), 1)
+                self.assertIn("Original release notes", updated_notes)
+
+
 class ReleaseAssetUploadTests(unittest.TestCase):
     def setUp(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
