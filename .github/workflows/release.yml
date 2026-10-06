@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   package-app:
-    runs-on: macos-15
+    runs-on: macos-26
     permissions:
       contents: write
     env:
@@ -51,6 +51,16 @@ jobs:
           ref: refs/tags/${{ env.TAG }}
           persist-credentials: false
 
+      - name: Check out toolchain verification from workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .ci-toolchain
+          persist-credentials: false
+
+      - name: Report and verify selected build environment
+        uses: ./.ci-toolchain/.github/actions/setup-toolchain
+
       - name: Label unsigned development release
         if: env.SIGNING_MODE == 'unsigned-development'
         shell: bash
@@ -73,13 +83,25 @@ jobs:
           gh release edit "$TAG" --title "$title" --prerelease \
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
+      - name: Prepare isolated presentation tooling
+        if: ${{ hashFiles('scripts/packaging-requirements.txt') != '' }}
+        run: |
+          python3 -m venv .build/packaging-venv
+          .build/packaging-venv/bin/python -m pip install -r scripts/packaging-requirements.txt
+
       - name: Build package and run repository tests
         run: |
           set -euo pipefail
           swift build
           swift Tests/FaderlineTests/FaderlineTests.swift
           swift test
-          python3 -m unittest discover -s Tests/ReleasePackagingTests -v
+          if [[ -f scripts/packaging-requirements.txt ]]; then
+            .build/packaging-venv/bin/python -m unittest discover -s Tests/ReleasePackagingTests -v
+          else
+            echo "Release tag predates presentation tooling; running its dependency-free packaging tests."
+            python3 -m unittest discover -s Tests/ReleasePackagingTests -v
+          fi
+          python3 -m unittest discover -s .ci-toolchain/Tests/BuildEnvironmentTests -v
 
       - name: Prepare Developer ID signing and notarization
         if: env.SIGNING_MODE == 'developer-id'
@@ -131,6 +153,9 @@ jobs:
           bash scripts/package-app.sh --version "${TAG#v}" \
             --build-number "$GITHUB_RUN_NUMBER" --developer-id "$SIGNING_IDENTITY" \
             --notary-profile app-release
+
+      - name: Verify packaged app SDK and deployment requirements
+        run: python3 .ci-toolchain/scripts/verify-build-environment.py --app dist/*/Faderline.app
 
       - name: Retain DMG and checksum as workflow artifacts
         uses: actions/upload-artifact@v4

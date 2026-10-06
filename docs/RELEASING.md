@@ -18,7 +18,65 @@ installer, driver lifecycle change, automatic updater, or Sparkle integration.
   not just Command Line Tools. Select that Xcode installation as the active
   developer directory, or set `DEVELOPER_DIR` for the command.
 - Packaging uses macOS's built-in `xcodebuild`, `ditto`, `codesign`, `hdiutil`,
-  and `shasum`; no system-wide packaging tools need to be installed.
+  `swift`/AppKit, and `shasum`, plus Python 3.9+ with the pinned `ds-store`
+  and `mac-alias` libraries in a **project-local venv**. No global Python
+  packages, GUI session, Finder automation, or system-wide packaging tools
+  are required.
+
+## CI build environment
+
+Both CI and release packaging use the **stable GitHub-hosted `macos-26`
+Apple Silicon runner**, explicitly selecting **Xcode 26.6 (17F113)** with
+the **macOS 26.5 SDK** via job-scoped `DEVELOPER_DIR`. The documented image
+currently runs macOS 26.6.2; the runner OS patch/image can change as GitHub
+rolls out updates. This does **not** raise the app's minimum OS: packages
+remain **arm64-only, macOS 15.0+**, with Swift 5 language mode.
+Xcode 26.6's **Swift 6.3.3 compiler (`swiftlang-6.3.3.1.3`)** supports that
+language mode and the package's Swift 6.0 tools requirement.
+
+Checked against the official [runner labels](https://github.com/actions/runner-images#available-images),
+[installed Xcode/SDK inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md#xcode),
+and [Apple's compatibility table](https://developer.apple.com/xcode/system-requirements)
+on 2026-10-03. Apple has released Xcode 27/macOS 27 SDK, but GitHub's
+[`xcode-27` image is still preview](https://github.com/actions/runner-images/issues/14404).
+It is intentionally excluded: 26.6 is the newest stable Xcode available on
+GitHub's GA macOS image, not the latest Apple release or local installation.
+
+The workflows pin the runner major, Xcode version/build, Swift version/build
+and SDK rather than
+using `macos-latest`, the runner's default Xcode, or an automatically advancing
+`latest-stable` selector. `DEVELOPER_DIR` selects the documented preinstalled
+path without needing `setup-xcode` or changing the system developer selection.
+The shared composite action
+[`.github/actions/setup-toolchain/action.yml`](../.github/actions/setup-toolchain/action.yml)
+defines the toolchain pins once, exports them to subsequent job steps via
+`GITHUB_ENV`, and runs verification. Update that action and its verification
+tests when a newer stable hosted toolchain is available. The runner label
+remains in both workflows because runner selection happens before steps run.
+This favors an auditable toolchain over automatic upgrades.
+Runner images themselves are not immutable, and
+removal/replacement of the pinned Xcode intentionally fails CI rather than
+silently changing the SDK.
+
+[`scripts/verify-build-environment.py`](../scripts/verify-build-environment.py)
+logs the actual runner image, macOS, architecture, Xcode, Swift and SDK before
+building. It parses and checks `swift --version` from the same `PATH` used by
+the following SPM commands, rejecting a different compiler version/build or
+unrecognized output even when Xcode/SDK match. After packaging, it requires
+the bundle's `DTSDKName=macosx26.5`,
+`DTXcode=2660`, `DTXcodeBuild=17F113`, `LSMinimumSystemVersion=15.0` and
+arm64-only executable before uploading any artifacts. Release retries take
+the shared action and verification tooling from the **workflow revision**, while app source
+and packaging still come from the **requested release tag**, so older
+published tags need not contain the new verifier.
+Presentation dependencies are installed only when the release tag contains
+their requirements file. Earlier tags retain their dependency-free packaging
+tests; newer tags require the venv and never fall back when it is missing.
+
+Local packaging continues to use the selected local Xcode/`DEVELOPER_DIR`;
+it does not install the CI toolchain. A newer linked SDK may change native
+control appearance on newer macOS, but this update neither restyles controls
+nor establishes that the downloaded release's UI matches a local build.
 
 ## User documentation checklist
 
@@ -44,6 +102,8 @@ Before recommending a new release:
 From the repository root:
 
 ```bash
+python3 -m venv .build/packaging-venv
+.build/packaging-venv/bin/python -m pip install -r scripts/packaging-requirements.txt
 bash scripts/package-app.sh --version 1.2.3 --build-number 42 --unsigned-development
 ```
 
@@ -57,10 +117,33 @@ dist/Faderline-1.2.3-arm64-unsigned-development/
   Faderline-1.2.3-arm64-unsigned-development.sha256
 ```
 
-The compressed, read-only DMG contains `Faderline.app`, an `Applications`
-shortcut pointing to `/Applications`, and installation/signing information
-in `README.txt`. Packaging verifies bundle metadata, architecture, signatures,
-the image integrity, and the mounted app/shortcut before returning success.
+The compressed, read-only DMG shows only `Faderline.app` on the left and an
+`Applications` shortcut pointing to `/Applications` on the right. It omits
+`README.txt` entirely. Its 560×340 Finder icon-view window uses 96-point
+icons at (150, 162) and (410, 162), with the toolbar, sidebar, status bar and
+path bar hidden. A locally rendered neutral background contains a centered
+arrow with no decorative or instructional text on signed public images.
+Installation/update instructions and platform requirements stay in the project
+documentation, outside the DMG.
+The background includes 1×/2× TIFF representations for Retina displays.
+
+The signed volume title is `Faderline X.Y.Z`; unsigned titles append
+`- UNSIGNED DEVELOPMENT`, and the unsigned background visibly repeats
+`UNSIGNED DEVELOPMENT` and `Not Developer ID signed or notarized`.
+This is the only background text on local development images.
+Asset/directory names retain the explicit signing mode.
+Presentation is generated directly on a temporary writable HFS+ image:
+the hidden `.DS_Store` stores window bounds, view options and icon coordinates,
+and its alias references the hidden `.background.tiff` **on that volume**, not
+a CI staging path. The image is then detached and compressed to UDZO
+**before final DMG signing, notarization, stapling and checksumming**.
+Nothing inside the already signed app bundle is modified.
+
+Packaging verifies bundle metadata, architecture, signatures, the image
+integrity, exactly two visible root items, the actual Finder bounds/icon
+settings/positions, and the background alias's volume/file IDs after remounting.
+Presentation generation or inspection failures stop packaging; there is no
+unstyled-image fallback.
 It does not install or launch the app. Build scratch data is removed on exit.
 `dist/`, disk images, archives, and `.build/` are ignored by Git.
 
@@ -68,7 +151,8 @@ Use `--output /path/to/artifacts` to change the output parent directory.
 Existing version/mode directories are **not overwritten**; use another output
 directory for a repeat build. Run `bash scripts/package-app.sh --help` for options.
 With the same source, version, build number and Xcode/SDK, this repeats the
-same build/packaging procedure. DMG filesystem metadata and signing/notarization
+same headless build/packaging procedure and explicit layout. DMG filesystem
+metadata and signing/notarization
 timestamps mean artifacts are **not guaranteed byte-for-byte identical**;
 checksums describe the actual final downloadable DMG.
 
@@ -78,6 +162,18 @@ Apple Silicon requires executable signatures, so the script applies an
 notarized and Gatekeeper may refuse to open a downloaded copy. Checksums prove
 file integrity, not publisher identity or Gatekeeper approval. Only use these
 builds for trusted development; do not disable Gatekeeper system-wide.
+
+Run the packaging tests with the same venv:
+
+```bash
+.build/packaging-venv/bin/python -m unittest discover -s Tests/ReleasePackagingTests -v
+```
+
+`PACKAGING_PYTHON=/absolute/path/to/venv/bin/python` can select another isolated
+environment containing the pinned requirements. Both macOS workflows set up
+the project-local venv before packaging and tests. Structural/signed-path mock
+tests do not prove Apple notarization; only an explicitly authorized signed
+release can exercise that service.
 
 ## Versioning
 
@@ -104,9 +200,9 @@ Nothing is published by the local packaging command.
    must contain the packaging script and workflow.
 3. Add release notes and publish. For unsigned builds, mark it as a
    **prerelease** and identify it as unsigned development.
-4. Actions builds on `macos-15`, runs the SPM and standalone tests, invokes
-   the same packaging script (including its Xcode Release build and DMG
-   inspection), and attaches `Faderline-X.Y.Z.dmg` and
+4. Actions builds on `macos-26` with the pinned Xcode/SDK above, runs the SPM
+   and standalone tests, invokes the same packaging script (including its Xcode
+   Release build and DMG inspection), and attaches `Faderline-X.Y.Z.dmg` and
    `Faderline-X.Y.Z.sha256` under the release's **Assets**. The release asset
    names are the same for signed and unsigned builds; release notes identify
    whether the artifacts are signed/notarized or unsigned development. The
@@ -209,8 +305,9 @@ The downloaded GitHub Release assets use the same simple filenames in either
 signing mode. Check the release notes to confirm whether the build is signed
 and notarized or an unsigned development prerelease before installing it.
 Open the DMG and drag **Faderline.app** onto the **Applications** shortcut.
-Eject the DMG and launch the app from Applications, granting microphone
-permission when prompted.
+The user-facing instructions are: “Drag Faderline to Applications. To update,
+quit Faderline normally, then replace the app. Eject the disk image and open
+Faderline from Applications.” Grant microphone permission when prompted.
 
 To update, first choose **Faderline → Quit** or press **Command-Q**, and wait
 for the app to exit cleanly. Then drag the new app to Applications and confirm

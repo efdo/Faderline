@@ -1,0 +1,27 @@
+name: Set up Faderline toolchain
+description: Export and verify the pinned stable hosted Xcode, Swift and macOS SDK.
+
+runs:
+  using: composite
+  steps:
+    - name: Export and verify toolchain
+      shell: bash
+      env:
+        DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+        EXPECTED_XCODE_VERSION: '26.6'
+        EXPECTED_XCODE_BUILD: '17F113'
+        EXPECTED_DTXCODE: '2660'
+        EXPECTED_MACOS_SDK_VERSION: '26.5'
+        EXPECTED_SWIFT_VERSION: '6.3.3'
+        EXPECTED_SWIFT_BUILD: 'swiftlang-6.3.3.1.3'
+        TOOLCHAIN_ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import os
+        with open(os.environ["GITHUB_ENV"], "a") as destination:
+            for key, value in sorted(os.environ.items()):
+                if key == "DEVELOPER_DIR" or key.startswith("EXPECTED_"):
+                    destination.write(f"{key}={value}\n")
+        PY
+        python3 "$TOOLCHAIN_ACTION_PATH/../../../scripts/verify-build-environment.py"

@@ -66,7 +66,7 @@ else
     [[ -n "$notary_profile" ]] || fail "--developer-id requires --notary-profile"
 fi
 [[ "$(uname -s)" == Darwin ]] || fail "Packaging requires macOS and full Xcode"
-for tool in xcodebuild hdiutil codesign ditto shasum; do
+for tool in xcodebuild hdiutil codesign ditto shasum swift; do
     command -v "$tool" >/dev/null || fail "Required tool is unavailable: $tool"
 done
 if [[ "$mode" == developer-id-notarized ]]; then
@@ -78,10 +78,18 @@ if [[ "$mode" == developer-id-notarized ]]; then
 fi
 
 root="$(cd "$(dirname "$0")/.." && pwd -P)"
+packaging_python="${PACKAGING_PYTHON:-$root/.build/packaging-venv/bin/python}"
+[[ -x "$packaging_python" ]] || fail "Set up the project packaging venv; see docs/RELEASING.md"
+"$packaging_python" -c 'import ds_store, mac_alias' \
+    || fail "Missing presentation dependencies; see scripts/packaging-requirements.txt"
 output="${output:-$root/dist}"
 mkdir -p "$output" "$root/.build"
 output="$(cd "$output" && pwd -P)"
 base="Faderline-$version-arm64-$mode"
+volume_name="Faderline $version"
+if [[ "$mode" == unsigned-development ]]; then
+    volume_name="$volume_name - UNSIGNED DEVELOPMENT"
+fi
 destination="$output/$base"
 [[ ! -e "$destination" ]] || fail "Output already exists: $destination (choose another --output)"
 work="$(mktemp -d "$root/.build/release-packaging.XXXXXX")"
@@ -163,23 +171,20 @@ codesign --verify --deep --strict --verbose=2 "$app"
 
 ditto "$app" "$work/image/Faderline.app"
 ln -s /Applications "$work/image/Applications"
-cat > "$work/image/README.txt" <<EOF
-Faderline $version (build $build_number) - macOS 15+ / Apple Silicon only
-
-$signing_note
-
-Install: drag Faderline.app to the Applications shortcut.
-Update: quit Faderline cleanly with Command-Q and wait for it to exit, then
-replace Faderline.app in Applications. Never force-kill a running mixer.
-Eject this disk image, then open the app from Applications.
-
-This image contains only the mixer app. It does not include, install,
-update, or remove a virtual microphone driver. Updates are manual.
-EOF
 
 dmg="$work/artifacts/$base.dmg"
-hdiutil create -quiet -volname "$base" -srcfolder "$work/image" \
-    -fs HFS+ -format UDZO "$dmg"
+# Leave room for the Retina background and Finder metadata on the writable image.
+image_size_kb="$(du -sk "$work/image" | cut -f1)"
+hdiutil create -quiet -volname "$volume_name" -srcfolder "$work/image" \
+    -size "$((image_size_kb + 32768))k" -fs HFS+ -format UDRW "$work/presentation.dmg"
+mkdir "$work/mount"
+hdiutil attach -quiet -nobrowse -mountpoint "$work/mount" "$work/presentation.dmg"
+mounted=true
+"$packaging_python" "$root/scripts/dmg-presentation.py" write "$work/mount" \
+    --mode "$mode" --volume-name "$volume_name"
+hdiutil detach -quiet "$work/mount"
+mounted=false
+hdiutil convert -quiet "$work/presentation.dmg" -format UDZO -o "$dmg"
 if [[ "$mode" == developer-id-notarized ]]; then
     codesign --sign "$identity" --timestamp "$dmg"
     notarize "$dmg" "$work/dmg-notarization.plist"
@@ -190,14 +195,14 @@ if [[ "$mode" == developer-id-notarized ]]; then
 fi
 
 hdiutil verify -quiet "$dmg"
-mkdir "$work/mount"
 hdiutil attach -quiet -readonly -nobrowse -mountpoint "$work/mount" "$dmg"
 mounted=true
 [[ "$(readlink "$work/mount/Applications")" == /Applications ]] \
     || fail "DMG Applications shortcut is invalid"
 cmp "$plist" "$work/mount/Faderline.app/Contents/Info.plist"
 diff -qr "$app" "$work/mount/Faderline.app"
-cmp "$work/image/README.txt" "$work/mount/README.txt"
+"$packaging_python" "$root/scripts/dmg-presentation.py" verify "$work/mount" \
+    --mode "$mode" --volume-name "$volume_name"
 codesign --verify --deep --strict --verbose=2 "$work/mount/Faderline.app"
 echo "Verified DMG contents:"
 ls -A "$work/mount"

@@ -52,6 +52,11 @@ Open `Faderline.xcodeproj`, select the Faderline scheme, press ⌘R.
 
 > Full Xcode required (not just Command Line Tools).
 
+CI and releases use the stable GitHub-hosted **macos-26 / Xcode 26.6**
+environment and **macOS 26.5 SDK**, while preserving **macOS 15.0+ / arm64**
+deployment. See the [build environment policy](docs/RELEASING.md#ci-build-environment)
+for exact toolchain pins, verification, and hosted availability limits.
+
 ### App icon
 
 The Xcode app bundle (including release installers) uses
