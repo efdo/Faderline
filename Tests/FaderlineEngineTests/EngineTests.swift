@@ -1,6 +1,102 @@
 import XCTest
 import CoreAudio
+import AppKit
+import SwiftUI
 @testable import Faderline
+
+@MainActor
+final class InitialWindowFocusTests: XCTestCase {
+    func testEscapeClearsFocusAndTabRestoresIt() async throws {
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        let content = NSHostingView(rootView:
+            TextField("Gain", text: .constant("0.0"))
+                .background(InitialWindowFocus())
+        )
+        let container = NSView(frame: window.contentLayoutRect)
+        content.frame = container.bounds
+        container.addSubview(content)
+        window.contentView = container
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        content.layoutSubtreeIfNeeded()
+        await drainMainQueue()
+
+        func findField(in view: NSView) -> NSTextField? {
+            if let field = view as? NSTextField { return field }
+            return view.subviews.lazy.compactMap { findField(in: $0) }.first
+        }
+        let field = try XCTUnwrap(findField(in: content))
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let escape = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+            isARepeat: false, keyCode: 53
+        ))
+        let menu = NSMenu()
+        NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: menu)
+        NSApp.sendEvent(escape)
+        await drainMainQueue()
+        XCTAssertTrue(window.firstResponder === field.currentEditor())
+        NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: menu)
+        NSApp.sendEvent(escape)
+        await drainMainQueue()
+        XCTAssertTrue(window.firstResponder === window)
+
+        window.recalculateKeyViewLoop()
+        window.selectNextKeyView(nil)
+        XCTAssertTrue(window.firstResponder === field.currentEditor())
+        XCTAssertNotNil(field.currentEditor())
+
+        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 100, height: 24))
+        picker.addItem(withTitle: "Device")
+        container.addSubview(picker)
+        XCTAssertTrue(window.makeFirstResponder(picker))
+        NSApp.sendEvent(escape)
+        XCTAssertTrue(window.firstResponder === window)
+    }
+
+    func testInitialFocusClearedButLaterFocusPreserved() async {
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        let content = NSView(frame: window.contentLayoutRect)
+        let field = NSTextField(frame: NSRect(x: 10, y: 10, width: 100, height: 24))
+        let initialFocus = InitialWindowFocusView()
+        content.addSubview(field)
+        content.addSubview(initialFocus)
+        window.contentView = content
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        XCTAssertTrue(window.makeFirstResponder(field))
+        XCTAssertNotNil(window.firstResponder as? NSTextView)
+
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+        await drainMainQueue()
+        XCTAssertTrue(window.firstResponder === window)
+
+        window.recalculateKeyViewLoop()
+        window.selectNextKeyView(nil)
+        XCTAssertNotNil(window.firstResponder as? NSTextView)
+        XCTAssertTrue(window.firstResponder === field.currentEditor())
+        let focusedResponder = window.firstResponder
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+        await drainMainQueue()
+        XCTAssertTrue(window.firstResponder === focusedResponder)
+    }
+
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+}
 
 final class ConsoleLayoutTests: XCTestCase {
     func testPanKnobFitsExistingRow() {
@@ -25,6 +121,14 @@ final class ConsoleLayoutTests: XCTestCase {
 }
 
 final class PanKnobTests: XCTestCase {
+    func testHoverTextDescribesCurrentPan() {
+        XCTAssertEqual(PanKnobView.helpText(for: 0), "Pan: Center")
+        XCTAssertEqual(PanKnobView.helpText(for: -1), "Pan: 100% Left")
+        XCTAssertEqual(PanKnobView.helpText(for: 1), "Pan: 100% Right")
+        XCTAssertEqual(PanKnobView.helpText(for: -0.42), "Pan: 42% Left")
+        XCTAssertEqual(PanKnobView.helpText(for: 0.25), "Pan: 25% Right")
+    }
+
     func testCenterSnapIncludesBothEdges() {
         for translation: CGFloat in [-4, -2, 0, 2, 4] {
             XCTAssertEqual(PanKnobView.pan(

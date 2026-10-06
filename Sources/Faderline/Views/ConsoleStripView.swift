@@ -55,31 +55,19 @@ struct ConsoleStripView: View {
     private var deviceRow: some View {
         switch kind {
         case .input(let strip):
-            Picker("", selection: Binding(
+            ConsolePicker(selection: Binding(
                 get: { strip.selectedDevice },
                 set: { viewModel.selectInputDevice($0, forStrip: strip) }
-            )) {
-                Text("N/A").tag(AudioDevice.none)
-                ForEach(viewModel.deviceManager.inputDevices) { device in
-                    Text(device.name).tag(device)
-                }
-            }
-            .labelsHidden()
-            .font(.system(size: 9))
-            .lineLimit(1)
+            ), options: [AudioDevice.none] + viewModel.deviceManager.inputDevices,
+                          label: { $0.name }, accessibilityLabel: "\(strip.label) device")
+            .frame(maxWidth: .infinity)
         case .main(let output):
-            Picker("", selection: Binding(
+            ConsolePicker(selection: Binding(
                 get: { output.selectedDevice },
                 set: { viewModel.selectOutputDevice($0) }
-            )) {
-                Text("N/A").tag(AudioDevice.none)
-                ForEach(viewModel.deviceManager.outputDevices) { device in
-                    Text(device.name).tag(device)
-                }
-            }
-            .labelsHidden()
-            .font(.system(size: 9))
-            .lineLimit(1)
+            ), options: [AudioDevice.none] + viewModel.deviceManager.outputDevices,
+                          label: { $0.name }, accessibilityLabel: "\(output.label) device")
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -90,17 +78,12 @@ struct ConsoleStripView: View {
         switch kind {
         case .input(let strip):
             if strip.selectedDevice.id != AudioDevice.none.id {
-                Picker("", selection: Binding(
+                ConsolePicker(selection: Binding(
                     get: { strip.channelMode },
                     set: { viewModel.setChannelMode($0, forStrip: strip) }
-                )) {
-                    ForEach(strip.availableChannelModes) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-                .labelsHidden()
-                .font(.system(size: 8))
-                .lineLimit(1)
+                ), options: strip.availableChannelModes,
+                              label: { $0.label }, accessibilityLabel: "\(strip.label) channels")
+                .frame(maxWidth: .infinity)
             } else {
                 placeholderDash
             }
@@ -208,14 +191,20 @@ struct ConsoleStripView: View {
                 toggleButton(label: "M", active: strip.muted, activeColor: MixerTheme.muteOn) {
                     viewModel.toggleMute(forStrip: strip)
                 }
+                .help(strip.muted ? "Mute: On - click to unmute this input" : "Mute: Off - click to mute this input")
+                .accessibilityLabel("Mute \(strip.label)")
                 toggleButton(label: "S", active: strip.soloed, activeColor: MixerTheme.soloOn) {
                     viewModel.toggleSolo(forStrip: strip)
                 }
+                .help(strip.soloed ? "Solo: On - click to disable solo" : "Solo: Off - click to hear only soloed inputs routed to Main")
+                .accessibilityLabel("Solo \(strip.label)")
             }
         case .main(let output):
             toggleButton(label: "M", active: output.muted, activeColor: MixerTheme.muteOn) {
                 viewModel.toggleOutputMute()
             }
+            .help(output.muted ? "Mute: On - click to unmute Main Output" : "Mute: Off - click to mute Main Output")
+            .accessibilityLabel("Mute Main Output")
         }
     }
 
@@ -258,6 +247,63 @@ struct ConsoleStripView: View {
     }
 }
 
+/// Native pop-ups retain standard keyboard navigation and focus indicators.
+/// Explicit sizing makes short channel labels fill the same width as devices.
+private struct ConsolePicker<Value: Equatable>: NSViewRepresentable {
+    @Binding var selection: Value
+    let options: [Value]
+    let label: (Value) -> String
+    let accessibilityLabel: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSPopUpButton {
+        let button = NSPopUpButton(frame: .zero, pullsDown: false)
+        button.lineBreakMode = .byTruncatingTail
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.select(_:))
+        return button
+    }
+
+    func updateNSView(_ button: NSPopUpButton, context: Context) {
+        context.coordinator.parent = self
+        let titles = options.map(label)
+        if button.itemTitles != titles {
+            button.removeAllItems()
+            // Add individually: duplicate device names must retain distinct indices.
+            for title in titles {
+                button.menu?.addItem(NSMenuItem(title: title, action: nil, keyEquivalent: ""))
+            }
+        }
+        button.selectItem(at: options.firstIndex(of: selection) ?? -1)
+        button.toolTip = label(selection)
+        button.setAccessibilityLabel(accessibilityLabel)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSPopUpButton, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? nsView.intrinsicContentSize.width,
+               height: nsView.intrinsicContentSize.height)
+    }
+
+    final class Coordinator: NSObject {
+        var parent: ConsolePicker
+
+        init(_ parent: ConsolePicker) {
+            self.parent = parent
+        }
+
+        @objc func select(_ sender: NSPopUpButton) {
+            let index = sender.indexOfSelectedItem
+            guard parent.options.indices.contains(index) else { return }
+            let value = parent.options[index]
+            sender.toolTip = parent.label(value)
+            parent.selection = value
+        }
+    }
+}
+
 /// A dB-value text field that lets the user type an exact gain. Editing uses
 /// local state so in-progress typing (e.g. a lone "-") isn't immediately
 /// overwritten by the live model value; the value only commits on submit or
@@ -276,6 +322,7 @@ private struct DBField: View {
             .multilineTextAlignment(.center)
             .textFieldStyle(.roundedBorder)
             .focused($isFocused)
+            .help(text)
             .onChange(of: value, initial: true) { _, newValue in
                 if !isFocused { text = FaderTaper.displayString(forDB: newValue) }
             }
