@@ -6,9 +6,10 @@ bug reports are welcome.
 ## Before you start
 
 For a larger change, open an issue first to discuss the problem and proposed
-approach. For a bug report, include what you expected, what happened, the
-macOS/Faderline versions, and steps to reproduce. Remove private device names
-or other personal details from screenshots and logs before sharing them.
+approach. Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
+to include what you expected, what happened, the macOS/Faderline versions,
+steps to reproduce, and your input/output device setup. Remove private device
+names or other personal details from screenshots and logs before sharing them.
 
 ## Build and check your changes
 

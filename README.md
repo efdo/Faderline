@@ -1,20 +1,20 @@
 # Faderline
 
+[![Latest release (including prereleases)](https://img.shields.io/github/v/release/efdo/Faderline?include_prereleases&sort=semver)](https://github.com/efdo/Faderline/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Bring your audio inputs together in one small mixer for your Mac. Choose where
 the sound comes from, adjust the mix, and send it to an output device you
 already use.
 
 ![Faderline 0.0.3 with two input strips and a main output strip. Meter levels vary with the signal and device.](docs/assets/mixer-overview-v0.0.3.png)
 
-**[Download the signed v0.0.3 prerelease](https://github.com/efdo/AudioMixer/releases/tag/v0.0.3)**
+**[Download Faderline](https://github.com/efdo/Faderline/releases)**
  · **[Getting started](docs/GETTING_STARTED.md)**
- · [All releases](https://github.com/efdo/AudioMixer/releases)
 
 Requires **macOS 15 (Sequoia) or later, Apple Silicon, and microphone permission**.
-Open the signed release's `.dmg` and drag **Faderline.app** to **Applications**.
-The v0.0.3 prerelease uses the original longer asset name; new releases use
-`Faderline-<version>.dmg`, with signing status stated in the release notes.
-No build tools needed.
+Download `Faderline-<version>.dmg` from the release's **Assets**, open it, and
+drag **Faderline.app** to **Applications**. No build tools needed.
 
 ## Make it your mix
 
