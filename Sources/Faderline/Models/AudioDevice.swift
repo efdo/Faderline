@@ -29,7 +29,7 @@ extension AudioDevice {
     static let none = AudioDevice(
         id: kAudioObjectUnknown,
         uid: "",
-        name: "N/A",
+        name: "Select Device…",
         inputChannelCount: 0,
         outputChannelCount: 0,
         sampleRate: 44100

@@ -34,6 +34,7 @@ final class MixerViewModel {
         mainOutput = OutputStripViewModel(id: 0, label: "Main Output")
 
         loadConfiguration()
+        deviceManager.onDevicesChanged = { [weak self] in self?.reconcileSelectedDevices() }
         startLevelPolling()
         // Defer engine start to the next main-run-loop cycle so the run loop
         // is already live when AudioComponentInstanceNew's Mach IPC response
@@ -60,8 +61,50 @@ final class MixerViewModel {
     func selectInputDevice(_ device: AudioDevice, forStrip strip: InputStripViewModel) {
         strip.selectedDevice = device
         strip.leftChannelIndex = 0
-        strip.rightChannelIndex = min(1, device.inputChannelCount - 1)
+        strip.rightChannelIndex = min(1, max(0, device.inputChannelCount - 1))
         rebuildEngine()
+    }
+
+    /// After a hot-plug change, clear any selection whose device is gone so
+    /// the strip shows "Select Device…" instead of silently following a
+    /// different (e.g. system default) device. Devices that reappear with a
+    /// new object ID are refreshed in place.
+    private func reconcileSelectedDevices() {
+        var changed = false
+        for strip in inputStrips where strip.selectedDevice.id != AudioDevice.none.id {
+            if let current = deviceManager.inputDevices.first(where: { $0.uid == strip.selectedDevice.uid }) {
+                if current != strip.selectedDevice {
+                    strip.selectedDevice = current
+                    let maxIndex = max(0, current.inputChannelCount - 1)
+                    strip.leftChannelIndex = min(strip.leftChannelIndex, maxIndex)
+                    strip.rightChannelIndex = min(strip.rightChannelIndex, maxIndex)
+                    changed = true
+                }
+            } else {
+                logger.notice("Input device '\(strip.selectedDevice.name, privacy: .public)' disappeared; clearing \(strip.label, privacy: .public)")
+                strip.selectedDevice = .none
+                strip.leftChannelIndex = 0
+                strip.rightChannelIndex = 1
+                strip.meter.levelLeft = 0
+                strip.meter.levelRight = 0
+                strip.meter.peakLeft = 0
+                strip.meter.peakRight = 0
+                changed = true
+            }
+        }
+        if mainOutput.selectedDevice.id != AudioDevice.none.id {
+            if let current = deviceManager.outputDevices.first(where: { $0.uid == mainOutput.selectedDevice.uid }) {
+                if current != mainOutput.selectedDevice {
+                    mainOutput.selectedDevice = current
+                    changed = true
+                }
+            } else {
+                logger.notice("Output device '\(self.mainOutput.selectedDevice.name, privacy: .public)' disappeared; clearing Main Output")
+                mainOutput.selectedDevice = .none
+                changed = true
+            }
+        }
+        if changed { rebuildEngine() }
     }
 
     func selectOutputDevice(_ device: AudioDevice) {

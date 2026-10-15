@@ -8,6 +8,9 @@ final class DeviceManager {
     private(set) var inputDevices: [AudioDevice] = []
     private(set) var outputDevices: [AudioDevice] = []
 
+    /// Called on the main thread after a hot-plug refresh updates the lists.
+    var onDevicesChanged: (() -> Void)?
+
     private var listenerBlock: AudioObjectPropertyListenerBlock?
 
     init() {
@@ -43,7 +46,9 @@ final class DeviceManager {
 
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             DispatchQueue.main.async {
-                self?.refresh()
+                guard let self else { return }
+                self.refresh()
+                self.onDevicesChanged?()
             }
         }
         self.listenerBlock = block
