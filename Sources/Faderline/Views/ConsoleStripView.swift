@@ -77,7 +77,7 @@ struct ConsoleStripView: View {
     private var channelsRow: some View {
         switch kind {
         case .input(let strip):
-            if strip.selectedDevice.id != AudioDevice.none.id {
+            if strip.hasDevice {
                 ConsolePicker(selection: Binding(
                     get: { strip.channelMode },
                     set: { viewModel.setChannelMode($0, forStrip: strip) }
@@ -113,6 +113,8 @@ struct ConsoleStripView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
             .buttonStyle(.plain)
+            .disabled(!strip.hasDevice)
+            .opacity(strip.hasDevice ? 1 : 0.35)
         case .main:
             placeholderDash
         }
