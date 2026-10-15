@@ -1,6 +1,6 @@
 # Faderline
 
-[![Latest release (including prereleases)](https://img.shields.io/github/v/release/efdo/Faderline?include_prereleases&sort=semver)](https://github.com/efdo/Faderline/releases)
+[![Latest release (including prereleases)](https://img.shields.io/github/v/release/efdo/Faderline?include_prereleases&sort=semver&color=brightgreen)](https://github.com/efdo/Faderline/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Bring your audio inputs together in one small mixer for your Mac. Choose where
