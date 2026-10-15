@@ -263,6 +263,10 @@ final class MixerViewModel {
         // Run `start()` on a background thread so the main run loop stays free
         // to receive and dispatch coreaudiod's reply.
         let engine = mixerEngine
+        // Master controls persist across rebuilds; set them here on main (in
+        // order with UI toggles) rather than snapshotting into the start call.
+        engine.setOutputVolume(mainOutput.gain)
+        engine.setOutputMuted(mainOutput.muted)
         let latencyMode: ActiveMixerEngine.LatencyMode = lowLatencyModeEnabled ? .low : .normal
         let generationCounter = rebuildGeneration
         let generation = generationCounter.next()
