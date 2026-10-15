@@ -25,6 +25,9 @@ final class MixerViewModel {
     /// that were superseded by a newer request skip their start.
     @ObservationIgnored private let engineQueue = DispatchQueue(label: "com.faderline.engine-lifecycle", qos: .userInitiated)
     @ObservationIgnored private let rebuildGeneration = RebuildGeneration()
+    /// Set once termination begins; all later rebuild requests are rejected so
+    /// nothing can recreate AUHAL units after the final stop.
+    @ObservationIgnored private var isShuttingDown = false
     private var inputMeterAnimationUntil: [Int: Date] = [:]
     private var outputMeterAnimationUntil: Date = .distantPast
 
@@ -62,6 +65,7 @@ final class MixerViewModel {
     /// it can't be overtaken; `completion` runs on main once cleanup is done.
     func shutdownEngine(completion: @escaping () -> Void) {
         // Invalidate queued rebuilds so none restart the engine after exit.
+        isShuttingDown = true
         rebuildGeneration.next()
         let engine = mixerEngine
         engineQueue.async {
@@ -221,6 +225,10 @@ final class MixerViewModel {
     // MARK: - Engine management
 
     private func rebuildEngine() {
+        guard !isShuttingDown else {
+            saveConfiguration()
+            return
+        }
         // Snapshot config values on the calling (main) thread before touching
         // the audio engine, so the background start closure captures plain
         // value types and avoids accessing @Observable properties off-thread.
