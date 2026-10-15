@@ -50,6 +50,8 @@ final class HALMixerEngine {
         let deviceID: AudioDeviceID
         /// Master linear gain applied to the mix bus (see `FaderTaper.gain(forDB:)`).
         var volume: Float = 1.0
+        /// Master mute, applied before the output unit starts.
+        var mute: Bool = false
     }
 
     // MARK: - Real-time state
@@ -133,9 +135,9 @@ final class HALMixerEngine {
         /// keep metering) rather than being rebuilt out of the graph.
         let anySolo: Atomic<Bool>
         let outGain: Atomic<Float>
-        let outMute = Atomic<Bool>(false)
+        let outMute: Atomic<Bool>
 
-        init(devices: [DeviceSlot], strips: [StripSlot], outputVolume: Float) {
+        init(devices: [DeviceSlot], strips: [StripSlot], outputVolume: Float, outputMuted: Bool) {
             self.devices = devices
             self.strips = strips
             let pairs = strips.map {
@@ -143,6 +145,7 @@ final class HALMixerEngine {
             }
             self.anySolo = Atomic(HALMixerEngine.anySoloed(among: pairs))
             self.outGain = Atomic(outputVolume)
+            self.outMute = Atomic(outputMuted)
         }
     }
 
@@ -320,7 +323,7 @@ final class HALMixerEngine {
             }
         }
 
-        let state = RenderState(devices: devices, strips: strips, outputVolume: output.volume)
+        let state = RenderState(devices: devices, strips: strips, outputVolume: output.volume, outputMuted: output.mute)
         self.renderState = state
 
         do {

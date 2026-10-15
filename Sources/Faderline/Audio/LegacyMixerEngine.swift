@@ -197,6 +197,7 @@ final class LegacyMixerEngine {
         let deviceID: AudioDeviceID
         /// Master linear gain applied via `AVAudioMixerNode.outputVolume`.
         var volume: Float = 1.0
+        var mute: Bool = false
     }
 
     // MARK: - Internal state
@@ -289,8 +290,8 @@ final class LegacyMixerEngine {
 
         let mainMixer = outputEngine.mainMixerNode
         outputGain = output.volume
-        outputMuted = false
-        mainMixer.outputVolume = output.volume
+        outputMuted = output.mute
+        mainMixer.outputVolume = output.mute ? 0 : output.volume
 
         // Group active inputs by device ID
         var deviceStrips: [AudioDeviceID: [(index: Int, config: InputConfig)]] = [:]

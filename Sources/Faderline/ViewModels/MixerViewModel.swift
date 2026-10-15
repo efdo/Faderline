@@ -1,5 +1,6 @@
 import SwiftUI
 import OSLog
+import Synchronization
 
 private let logger = Logger(subsystem: "com.faderline", category: "MixerViewModel")
 
@@ -18,6 +19,12 @@ final class MixerViewModel {
     var lowLatencyModeEnabled = false
 
     private var levelTimer: Timer?
+
+    /// Engine start/stop runs one at a time on this queue (never on main —
+    /// see agents.md gotcha #2). `rebuildGeneration` lets queued rebuilds
+    /// that were superseded by a newer request skip their start.
+    @ObservationIgnored private let engineQueue = DispatchQueue(label: "com.faderline.engine-lifecycle", qos: .userInitiated)
+    @ObservationIgnored private let rebuildGeneration = RebuildGeneration()
     private var inputMeterAnimationUntil: [Int: Date] = [:]
     private var outputMeterAnimationUntil: Date = .distantPast
 
@@ -53,6 +60,8 @@ final class MixerViewModel {
     /// Without this, killed instances leave orphaned HAL state in coreaudiod
     /// that blocks IOProc registration for the next launch.
     func stopEngine() {
+        // Invalidate queued rebuilds so none restart the engine after exit.
+        rebuildGeneration.next()
         mixerEngine.stop()
     }
 
@@ -225,7 +234,11 @@ final class MixerViewModel {
                 solo: strip.soloed
             )
         }
-        let output = ActiveMixerEngine.OutputConfig(deviceID: mainOutput.selectedDevice.id, volume: mainOutput.gain)
+        let output = ActiveMixerEngine.OutputConfig(
+            deviceID: mainOutput.selectedDevice.id,
+            volume: mainOutput.gain,
+            mute: mainOutput.muted
+        )
         saveConfiguration()
 
         // `AudioComponentInstanceNew` (called deep inside `start()`) makes a
@@ -234,17 +247,22 @@ final class MixerViewModel {
         // Run `start()` on a background thread so the main run loop stays free
         // to receive and dispatch coreaudiod's reply.
         let engine = mixerEngine
-        engine.latencyMode = lowLatencyModeEnabled ? .low : .normal
-        Task.detached(priority: .userInitiated) {
+        let latencyMode: ActiveMixerEngine.LatencyMode = lowLatencyModeEnabled ? .low : .normal
+        let generationCounter = rebuildGeneration
+        let generation = generationCounter.next()
+        engineQueue.async {
+            // A newer rebuild is queued behind us; let it build the final graph.
+            guard generationCounter.isCurrent(generation) else { return }
+            engine.latencyMode = latencyMode
             do {
                 try engine.start(inputs: inputs, output: output)
                 let isRunning = engine.isRunning
-                await MainActor.run {
+                DispatchQueue.main.async {
                     logger.notice("✅ Engine started successfully, isRunning=\(isRunning, privacy: .public)")
                 }
             } catch {
                 let desc = error.localizedDescription
-                await MainActor.run {
+                DispatchQueue.main.async {
                     logger.error("❌ MixerEngine failed to start: \(error, privacy: .public)")
                     engine.lastError = desc
                 }
@@ -365,5 +383,19 @@ final class MixerViewModel {
         }
         mainOutput.gainDB = config.mainOutput.gainDB
         lowLatencyModeEnabled = config.lowLatencyModeEnabled
+    }
+}
+
+/// Monotonic rebuild counter shared with the engine lifecycle queue.
+private final class RebuildGeneration: Sendable {
+    private let value = Atomic<Int>(0)
+
+    @discardableResult
+    func next() -> Int {
+        value.add(1, ordering: .acquiringAndReleasing).newValue
+    }
+
+    func isCurrent(_ generation: Int) -> Bool {
+        value.load(ordering: .acquiring) == generation
     }
 }
