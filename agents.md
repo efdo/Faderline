@@ -294,10 +294,13 @@ On the next launch, `AudioComponentInstanceNew` tries to register a new IOProc
 for the same device. CoreaudioD accepts the Mach IPC message but **never
 replies** — the calling thread blocks forever on `mach_msg2_trap`.
 
-**Fix already in place:** `FaderlineApp` listens for
-`NSApplication.willTerminateNotification` and calls `MixerViewModel.stopEngine()`
-before exit. AppKit routes `SIGTERM` (the default `kill <pid>`) through
-`applicationWillTerminate`, so a normal kill is safe.
+**Fix already in place:** `AppDelegate.applicationShouldTerminate` returns
+`.terminateLater` and calls `MixerViewModel.shutdownEngine(completion:)`, which
+queues the final `stop()` on the engine lifecycle queue behind any in-flight
+`start()` and replies once cleanup is done (5 s timeout fallback). It never
+blocks main. `AppDelegate` converts `SIGTERM` (the default `kill <pid>`) into
+`NSApp.terminate`, since AppKit would otherwise let it kill the process and
+skip cleanup, so a normal kill is safe.
 
 **If you see the engine hang on launch:** coreaudiod has orphaned state. Run:
 ```bash

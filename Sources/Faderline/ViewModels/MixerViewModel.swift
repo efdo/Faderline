@@ -55,14 +55,22 @@ final class MixerViewModel {
         mixerEngine.stop()
     }
 
-    /// Call on app termination (willTerminateNotification) so coreaudiod
-    /// receives proper IOProc-dispose notifications before the process exits.
-    /// Without this, killed instances leave orphaned HAL state in coreaudiod
-    /// that blocks IOProc registration for the next launch.
-    func stopEngine() {
+    /// Call on app termination so coreaudiod receives proper IOProc-dispose
+    /// notifications before the process exits. Without this, killed instances
+    /// leave orphaned HAL state in coreaudiod that blocks IOProc registration
+    /// for the next launch. The stop is queued behind any in-flight start so
+    /// it can't be overtaken; `completion` runs on main once cleanup is done.
+    func shutdownEngine(completion: @escaping () -> Void) {
         // Invalidate queued rebuilds so none restart the engine after exit.
         rebuildGeneration.next()
-        mixerEngine.stop()
+        let engine = mixerEngine
+        engineQueue.async {
+            engine.stop()
+            logger.notice("Engine shut down for termination")
+            // Run-loop delivery (common modes) still fires if termination was
+            // requested from inside a main-queue block.
+            RunLoop.main.perform(inModes: [.common], block: completion)
+        }
     }
 
     // MARK: - Actions
