@@ -3,7 +3,7 @@
 This guide is for maintainers. For downloading, installing, and using the app,
 see [Getting started](GETTING_STARTED.md).
 
-The repository is named AudioMixer; the current app is **Faderline.app**.
+The repository is named Faderline; the app is **Faderline.app**.
 Release packaging preserves that name and the `com.faderline.app` bundle
 identifier. It builds only the mixer app: no virtual microphone driver is
 built, packaged, embedded, installed, updated, or removed. There is no
@@ -82,9 +82,13 @@ nor establishes that the downloaded release's UI matches a local build.
 
 Before recommending a new release:
 
-- Update the signed download links and version in the README and
-  [getting-started guide](GETTING_STARTED.md); retain the prerelease label when
-  applicable and keep unsigned development downloads clearly separate.
+- The README release badge updates automatically through Shields.io once the
+  repository is public, including prereleases. Download links in the README and
+  [getting-started guide](GETTING_STARTED.md) point to the releases page, so no
+  per-release version edits are needed. Keep signing status explicit in release
+  notes and unsigned development downloads clearly labeled. Do not replace
+  these links with `/releases/latest` while only prereleases exist: GitHub's
+  latest-release shortcut excludes prereleases.
 - For Developer ID releases, add the signed/notarized status only after
   packaging, signing, notarization, and artifact verification succeed; publish
   that status before uploading downloadable assets. Unsigned-development

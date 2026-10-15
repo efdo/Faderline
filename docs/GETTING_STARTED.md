@@ -19,28 +19,21 @@ setup needs a virtual device, arrange that separately before using it here.
 
 ## Download and install
 
-1. Open the [signed v0.0.3 prerelease](https://github.com/efdo/AudioMixer/releases/tag/v0.0.3).
-   Under **Assets**, download the DMG, not the source-code ZIP. This existing
-   release uses the original longer asset name; new releases use
-   `Faderline-<version>.dmg`. Check the release notes to confirm signing status.
+1. Open [Faderline releases](https://github.com/efdo/Faderline/releases).
+   Under **Assets**, download `Faderline-<version>.dmg`, not the source-code ZIP.
 2. Open the downloaded DMG and drag **Faderline.app** to **Applications**.
 3. Eject the disk image and open Faderline from Applications.
 
 ![Faderline 0.0.3 disk image showing the app, an arrow, and the Applications shortcut.](assets/install-dmg-v0.0.3.png)
 
-*Faderline 0.0.3 disk image. Use the signed, notarized download linked above.*
-
-The v0.0.3 release is signed and notarized, but is still labeled a **prerelease**.
-[All releases](https://github.com/efdo/AudioMixer/releases) also lists other
-versions. Files marked `unsigned-development` are for trusted development,
-not the recommended first-time download.
+*Faderline 0.0.3 disk image.*
 
 ## Open for the first time
 
 macOS may ask whether you want to open an app downloaded from the internet.
-For the signed download above, choose **Open** in that normal confirmation.
+Choose **Open** in that normal confirmation.
 If macOS instead says the app is damaged or cannot be verified, check that you
-downloaded the signed DMG from this repository's release page. Don't disable
+downloaded the DMG from this repository's release page. Don't disable
 macOS security protections to get past an unexpected warning.
 
 When asked for microphone access, choose **Allow**. If you previously declined,
@@ -116,7 +109,7 @@ separately installed audio driver.
 | Microphone access denied | Use the alert's **Open System Settings** button, or open **System Settings > Privacy & Security > Microphone**. Enable Faderline, then quit and reopen it normally. |
 | No input meter activity | Produce a signal, check the selected device and channel preset, and check microphone permission. Very quiet signals may barely register. |
 | Input meter moves, but no sound | Check the Main routing button, input and output M buttons, any active S buttons, both faders, and your selected output's own listening volume. |
-| Error banner keeps appearing | Note its exact text and [report the problem](https://github.com/efdo/AudioMixer/issues), including Faderline/macOS versions and a brief description of your setup. Remove personal details from screenshots or logs before sharing. |
+| Error banner keeps appearing | Note its exact text and [report the problem](https://github.com/efdo/Faderline/issues), including Faderline/macOS versions and a brief description of your setup. Remove personal details from screenshots or logs before sharing. |
 
 ## More information
 
