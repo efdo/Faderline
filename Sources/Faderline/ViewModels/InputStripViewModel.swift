@@ -54,6 +54,8 @@ final class InputStripViewModel: Identifiable {
     /// Fader cap position (0...1) for the current dB value.
     var faderPosition: Float { FaderTaper.position(forDB: gainDB) }
 
+    var hasDevice: Bool { selectedDevice.id != AudioDevice.none.id }
+
     /// Available channels for the selected device.
     var availableChannels: [AudioChannel] {
         selectedDevice.inputChannels

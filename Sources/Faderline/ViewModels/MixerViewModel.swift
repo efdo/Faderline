@@ -1,5 +1,6 @@
 import SwiftUI
 import OSLog
+import Synchronization
 
 private let logger = Logger(subsystem: "com.faderline", category: "MixerViewModel")
 
@@ -18,6 +19,15 @@ final class MixerViewModel {
     var lowLatencyModeEnabled = false
 
     private var levelTimer: Timer?
+
+    /// Engine start/stop runs one at a time on this queue (never on main —
+    /// see agents.md gotcha #2). `rebuildGeneration` lets queued rebuilds
+    /// that were superseded by a newer request skip their start.
+    @ObservationIgnored private let engineQueue = DispatchQueue(label: "com.faderline.engine-lifecycle", qos: .userInitiated)
+    @ObservationIgnored private let rebuildGeneration = RebuildGeneration()
+    /// Set once termination begins; all later rebuild requests are rejected so
+    /// nothing can recreate AUHAL units after the final stop.
+    @ObservationIgnored private var isShuttingDown = false
     private var inputMeterAnimationUntil: [Int: Date] = [:]
     private var outputMeterAnimationUntil: Date = .distantPast
 
@@ -34,6 +44,7 @@ final class MixerViewModel {
         mainOutput = OutputStripViewModel(id: 0, label: "Main Output")
 
         loadConfiguration()
+        deviceManager.onDevicesChanged = { [weak self] in self?.reconcileSelectedDevices() }
         startLevelPolling()
         // Defer engine start to the next main-run-loop cycle so the run loop
         // is already live when AudioComponentInstanceNew's Mach IPC response
@@ -47,12 +58,23 @@ final class MixerViewModel {
         mixerEngine.stop()
     }
 
-    /// Call on app termination (willTerminateNotification) so coreaudiod
-    /// receives proper IOProc-dispose notifications before the process exits.
-    /// Without this, killed instances leave orphaned HAL state in coreaudiod
-    /// that blocks IOProc registration for the next launch.
-    func stopEngine() {
-        mixerEngine.stop()
+    /// Call on app termination so coreaudiod receives proper IOProc-dispose
+    /// notifications before the process exits. Without this, killed instances
+    /// leave orphaned HAL state in coreaudiod that blocks IOProc registration
+    /// for the next launch. The stop is queued behind any in-flight start so
+    /// it can't be overtaken; `completion` runs on main once cleanup is done.
+    func shutdownEngine(completion: @escaping () -> Void) {
+        // Invalidate queued rebuilds so none restart the engine after exit.
+        isShuttingDown = true
+        rebuildGeneration.next()
+        let engine = mixerEngine
+        engineQueue.async {
+            engine.stop()
+            logger.notice("Engine shut down for termination")
+            // Run-loop delivery (common modes) still fires if termination was
+            // requested from inside a main-queue block.
+            RunLoop.main.perform(inModes: [.common], block: completion)
+        }
     }
 
     // MARK: - Actions
@@ -60,8 +82,50 @@ final class MixerViewModel {
     func selectInputDevice(_ device: AudioDevice, forStrip strip: InputStripViewModel) {
         strip.selectedDevice = device
         strip.leftChannelIndex = 0
-        strip.rightChannelIndex = min(1, device.inputChannelCount - 1)
+        strip.rightChannelIndex = min(1, max(0, device.inputChannelCount - 1))
         rebuildEngine()
+    }
+
+    /// After a hot-plug change, clear any selection whose device is gone so
+    /// the strip shows "Select Device…" instead of silently following a
+    /// different (e.g. system default) device. Devices that reappear with a
+    /// new object ID are refreshed in place.
+    private func reconcileSelectedDevices() {
+        var changed = false
+        for strip in inputStrips where strip.selectedDevice.id != AudioDevice.none.id {
+            if let current = deviceManager.inputDevices.first(where: { $0.uid == strip.selectedDevice.uid }) {
+                if current != strip.selectedDevice {
+                    strip.selectedDevice = current
+                    let maxIndex = max(0, current.inputChannelCount - 1)
+                    strip.leftChannelIndex = min(strip.leftChannelIndex, maxIndex)
+                    strip.rightChannelIndex = min(strip.rightChannelIndex, maxIndex)
+                    changed = true
+                }
+            } else {
+                logger.notice("Input device '\(strip.selectedDevice.name, privacy: .public)' disappeared; clearing \(strip.label, privacy: .public)")
+                strip.selectedDevice = .none
+                strip.leftChannelIndex = 0
+                strip.rightChannelIndex = 1
+                strip.meter.levelLeft = 0
+                strip.meter.levelRight = 0
+                strip.meter.peakLeft = 0
+                strip.meter.peakRight = 0
+                changed = true
+            }
+        }
+        if mainOutput.selectedDevice.id != AudioDevice.none.id {
+            if let current = deviceManager.outputDevices.first(where: { $0.uid == mainOutput.selectedDevice.uid }) {
+                if current != mainOutput.selectedDevice {
+                    mainOutput.selectedDevice = current
+                    changed = true
+                }
+            } else {
+                logger.notice("Output device '\(self.mainOutput.selectedDevice.name, privacy: .public)' disappeared; clearing Main Output")
+                mainOutput.selectedDevice = .none
+                changed = true
+            }
+        }
+        if changed { rebuildEngine() }
     }
 
     func selectOutputDevice(_ device: AudioDevice) {
@@ -161,6 +225,10 @@ final class MixerViewModel {
     // MARK: - Engine management
 
     private func rebuildEngine() {
+        guard !isShuttingDown else {
+            saveConfiguration()
+            return
+        }
         // Snapshot config values on the calling (main) thread before touching
         // the audio engine, so the background start closure captures plain
         // value types and avoids accessing @Observable properties off-thread.
@@ -182,7 +250,11 @@ final class MixerViewModel {
                 solo: strip.soloed
             )
         }
-        let output = ActiveMixerEngine.OutputConfig(deviceID: mainOutput.selectedDevice.id, volume: mainOutput.gain)
+        let output = ActiveMixerEngine.OutputConfig(
+            deviceID: mainOutput.selectedDevice.id,
+            volume: mainOutput.gain,
+            mute: mainOutput.muted
+        )
         saveConfiguration()
 
         // `AudioComponentInstanceNew` (called deep inside `start()`) makes a
@@ -191,17 +263,26 @@ final class MixerViewModel {
         // Run `start()` on a background thread so the main run loop stays free
         // to receive and dispatch coreaudiod's reply.
         let engine = mixerEngine
-        engine.latencyMode = lowLatencyModeEnabled ? .low : .normal
-        Task.detached(priority: .userInitiated) {
+        // Master controls persist across rebuilds; set them here on main (in
+        // order with UI toggles) rather than snapshotting into the start call.
+        engine.setOutputVolume(mainOutput.gain)
+        engine.setOutputMuted(mainOutput.muted)
+        let latencyMode: ActiveMixerEngine.LatencyMode = lowLatencyModeEnabled ? .low : .normal
+        let generationCounter = rebuildGeneration
+        let generation = generationCounter.next()
+        engineQueue.async {
+            // A newer rebuild is queued behind us; let it build the final graph.
+            guard generationCounter.isCurrent(generation) else { return }
+            engine.latencyMode = latencyMode
             do {
                 try engine.start(inputs: inputs, output: output)
                 let isRunning = engine.isRunning
-                await MainActor.run {
+                DispatchQueue.main.async {
                     logger.notice("✅ Engine started successfully, isRunning=\(isRunning, privacy: .public)")
                 }
             } catch {
                 let desc = error.localizedDescription
-                await MainActor.run {
+                DispatchQueue.main.async {
                     logger.error("❌ MixerEngine failed to start: \(error, privacy: .public)")
                     engine.lastError = desc
                 }
@@ -322,5 +403,19 @@ final class MixerViewModel {
         }
         mainOutput.gainDB = config.mainOutput.gainDB
         lowLatencyModeEnabled = config.lowLatencyModeEnabled
+    }
+}
+
+/// Monotonic rebuild counter shared with the engine lifecycle queue.
+private final class RebuildGeneration: Sendable {
+    private let value = Atomic<Int>(0)
+
+    @discardableResult
+    func next() -> Int {
+        value.add(1, ordering: .acquiringAndReleasing).newValue
+    }
+
+    func isCurrent(_ generation: Int) -> Bool {
+        value.load(ordering: .acquiring) == generation
     }
 }

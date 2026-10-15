@@ -2,8 +2,50 @@ import SwiftUI
 import AVFoundation
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    weak var mixerViewModel: MixerViewModel?
+    private var isShuttingDown = false
+
+    /// Upper bound on waiting for engine cleanup, in case coreaudiod hangs.
+    private static let shutdownTimeout: TimeInterval = 5
+
+    private var sigtermSource: DispatchSourceSignal?
+
+    /// AppKit does not route SIGTERM through termination on its own; the
+    /// default action kills the process and skips engine cleanup. Convert it
+    /// into a normal `terminate(_:)` so `kill <pid>` disposes AUHAL units.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        // Hop off the GCD main-queue block: terminating from inside it would
+        // block the main queue that the shutdown reply is delivered on.
+        source.setEventHandler { RunLoop.main.perform { NSApp.terminate(nil) } }
+        source.resume()
+        sigtermSource = source
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    /// Defers termination until AUHAL units are disposed so coreaudiod releases
+    /// IOProc registrations (see agents.md gotcha #1). SIGTERM is routed
+    /// here too (see above). Never blocks main: CoreAudio startup needs the main run loop.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let mixerViewModel else { return .terminateNow }
+        // A shutdown is already pending; it will terminate when it finishes.
+        guard !isShuttingDown else { return .terminateCancel }
+        isShuttingDown = true
+
+        var replied = false
+        let reply = {
+            guard !replied else { return }
+            replied = true
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        mixerViewModel.shutdownEngine(completion: reply)
+        let timeout = Timer(timeInterval: Self.shutdownTimeout, repeats: false) { _ in reply() }
+        RunLoop.main.add(timeout, forMode: .common)
+        return .terminateLater
     }
 }
 
@@ -29,14 +71,7 @@ struct FaderlineApp: App {
                     Text("Faderline needs microphone access to capture audio. Enable it in System Settings → Privacy & Security → Microphone.")
                 }
                 .task { await requestMicrophonePermission() }
-                // Ensure AUHAL units are properly disposed on termination so
-                // coreaudiod releases IOProc registrations for the SSL 2 (or any
-                // other device). Without this, `kill`ing the process leaves
-                // orphaned HAL state that blocks the next launch.
-                .onReceive(NotificationCenter.default.publisher(
-                    for: NSApplication.willTerminateNotification)) { _ in
-                    mixerViewModel.stopEngine()
-                }
+                .onAppear { appDelegate.mixerViewModel = mixerViewModel }
         }
         .windowResizability(.contentMinSize)
         .defaultSize(width: consoleSize.width, height: consoleSize.height)

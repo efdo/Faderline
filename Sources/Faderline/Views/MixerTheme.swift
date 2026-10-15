@@ -144,6 +144,8 @@ struct ConsoleGutterView: View {
                     .frame(height: row.height, alignment: row == .faderAndMeter ? .top : .center)
             }
         }
+        // Match ConsoleStripView's vertical padding so labels align with controls.
+        .padding(.vertical, MixerTheme.Metrics.stripVerticalPadding)
         .frame(width: MixerTheme.Metrics.gutterWidth, alignment: .trailing)
         .padding(.trailing, MixerTheme.Metrics.gutterTrailingPadding)
     }

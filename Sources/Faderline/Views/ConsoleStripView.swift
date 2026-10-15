@@ -77,7 +77,7 @@ struct ConsoleStripView: View {
     private var channelsRow: some View {
         switch kind {
         case .input(let strip):
-            if strip.selectedDevice.id != AudioDevice.none.id {
+            if strip.hasDevice {
                 ConsolePicker(selection: Binding(
                     get: { strip.channelMode },
                     set: { viewModel.setChannelMode($0, forStrip: strip) }
@@ -85,7 +85,10 @@ struct ConsoleStripView: View {
                               label: { $0.label }, accessibilityLabel: "\(strip.label) channels")
                 .frame(maxWidth: .infinity)
             } else {
-                placeholderDash
+                ConsolePicker(selection: .constant("—"), options: ["—"],
+                              label: { $0 }, accessibilityLabel: "\(strip.label) channels")
+                .disabled(true)
+                .frame(maxWidth: .infinity)
             }
         case .main:
             placeholderDash
@@ -110,6 +113,8 @@ struct ConsoleStripView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
             .buttonStyle(.plain)
+            .disabled(!strip.hasDevice)
+            .opacity(strip.hasDevice ? 1 : 0.35)
         case .main:
             placeholderDash
         }
@@ -279,6 +284,7 @@ private struct ConsolePicker<Value: Equatable>: NSViewRepresentable {
         }
         button.selectItem(at: options.firstIndex(of: selection) ?? -1)
         button.toolTip = label(selection)
+        button.isEnabled = context.environment.isEnabled
         button.setAccessibilityLabel(accessibilityLabel)
     }
 

@@ -50,6 +50,11 @@ final class HALMixerEngine {
         let deviceID: AudioDeviceID
         /// Master linear gain applied to the mix bus (see `FaderTaper.gain(forDB:)`).
         var volume: Float = 1.0
+        /// Master mute. The HAL engine ignores `volume`/`mute` here: master
+        /// controls live in engine-owned `MasterControls` that persist across
+        /// rebuilds, so changes made while a start is pending aren't lost.
+        /// Set them with `setOutputVolume`/`setOutputMuted` before `start()`.
+        var mute: Bool = false
     }
 
     // MARK: - Real-time state
@@ -119,6 +124,15 @@ final class HALMixerEngine {
         }
     }
 
+    /// Master bus controls owned by the engine for its whole lifetime (not per
+    /// run), so UI writes land even while no render state exists yet.
+    private final class MasterControls: @unchecked Sendable {
+        let outGain = Atomic<Float>(1.0)
+        let outMute = Atomic<Bool>(false)
+    }
+
+    @ObservationIgnored private let master = MasterControls()
+
     /// Immutable-per-run state captured by the render callback.
     private final class RenderState: @unchecked Sendable {
         let devices: [DeviceSlot]
@@ -132,17 +146,16 @@ final class HALMixerEngine {
         /// True while any strip is soloed; non-soloed strips go silent (but
         /// keep metering) rather than being rebuilt out of the graph.
         let anySolo: Atomic<Bool>
-        let outGain: Atomic<Float>
-        let outMute = Atomic<Bool>(false)
+        let master: MasterControls
 
-        init(devices: [DeviceSlot], strips: [StripSlot], outputVolume: Float) {
+        init(devices: [DeviceSlot], strips: [StripSlot], master: MasterControls) {
             self.devices = devices
             self.strips = strips
             let pairs = strips.map {
                 (routed: $0.route.load(ordering: .relaxed), soloed: $0.solo.load(ordering: .relaxed))
             }
             self.anySolo = Atomic(HALMixerEngine.anySoloed(among: pairs))
-            self.outGain = Atomic(outputVolume)
+            self.master = master
         }
     }
 
@@ -259,7 +272,7 @@ final class HALMixerEngine {
             "\n" + outputDiagnostics +
             "\nout: L=\(String(format: "%.3f", outL)) R=\(String(format: "%.3f", outR)) " +
             "peakL=\(String(format: "%.3f", outPeakL)) peakR=\(String(format: "%.3f", outPeakR)) " +
-            "mute=\(state.outMute.load(ordering: .relaxed)) gain=\(String(format: "%.3f", state.outGain.load(ordering: .relaxed)))"
+            "mute=\(state.master.outMute.load(ordering: .relaxed)) gain=\(String(format: "%.3f", state.master.outGain.load(ordering: .relaxed)))"
     }
 
     // MARK: - Lifecycle
@@ -320,7 +333,7 @@ final class HALMixerEngine {
             }
         }
 
-        let state = RenderState(devices: devices, strips: strips, outputVolume: output.volume)
+        let state = RenderState(devices: devices, strips: strips, master: master)
         self.renderState = state
 
         do {
@@ -426,13 +439,11 @@ final class HALMixerEngine {
     }
 
     func setOutputVolume(_ gain: Float) {
-        guard let state = renderState else { return }
-        state.outGain.store(gain, ordering: .relaxed)
+        master.outGain.store(gain, ordering: .relaxed)
     }
 
     func setOutputMuted(_ muted: Bool) {
-        guard let state = renderState else { return }
-        state.outMute.store(muted, ordering: .relaxed)
+        master.outMute.store(muted, ordering: .relaxed)
     }
 
     // MARK: - Render-thread mix (static: no self capture)
@@ -503,8 +514,8 @@ final class HALMixerEngine {
         // 3. Master gain/mute, then peak (measured *before* the soft-clip
         // guard so >= 1.0 means a genuine over), then the clip guard itself,
         // then post-limiter RMS metering.
-        let outMuted = state.outMute.load(ordering: .relaxed)
-        var outGain = outMuted ? 0 : state.outGain.load(ordering: .relaxed)
+        let outMuted = state.master.outMute.load(ordering: .relaxed)
+        var outGain = outMuted ? 0 : state.master.outGain.load(ordering: .relaxed)
         if outGain != 1.0 {
             vDSP_vsmul(dest[0], 1, &outGain, dest[0], 1, vDSP_Length(n))
             vDSP_vsmul(dest[1], 1, &outGain, dest[1], 1, vDSP_Length(n))
