@@ -34,9 +34,11 @@ normally. Never use `SIGKILL`.
 Debug builds use the bundle ID `com.faderline.app.debug`, so they keep their
 own microphone permission and saved mix separate from an installed release.
 To keep that permission across rebuilds, copy
-`Config/DebugLocal.xcconfig.example` to `Config/DebugLocal.xcconfig`
-(git-ignored) and set your Apple Development Team ID; otherwise Debug builds
-are ad-hoc signed and macOS may ask for microphone access again.
+`Config/DebugSigning.xcconfig.example` to
+`~/.config/faderline/DebugSigning.xcconfig`, set your Team ID and signing
+identity, then run `bash scripts/link-debug-signing.sh` in each checkout (new
+Copilot app worktrees run it automatically). Otherwise Debug builds are ad-hoc
+signed and macOS may ask for microphone access again.
 
 ## Changes to audio behavior
 

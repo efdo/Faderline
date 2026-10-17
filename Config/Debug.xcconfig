@@ -3,8 +3,9 @@
 // Release builds are unaffected and keep com.faderline.app.
 PRODUCT_BUNDLE_IDENTIFIER = com.faderline.app.debug
 
-// Optional, git-ignored per-machine signing settings. Copy
-// DebugLocal.xcconfig.example to DebugLocal.xcconfig to sign Debug builds with
-// a stable Apple Development certificate so macOS keeps the microphone grant
-// across rebuilds. Without it, Debug builds are ad-hoc signed.
+// Optional signing settings. Config/DebugLocal.xcconfig is git-ignored and is
+// normally a symlink to the per-user ~/.config/faderline/DebugSigning.xcconfig,
+// created by scripts/link-debug-signing.sh (run automatically for new Copilot
+// app worktrees). A stable certificate lets macOS keep the microphone grant
+// across rebuilds; without it Debug builds are ad-hoc signed.
 #include? "DebugLocal.xcconfig"

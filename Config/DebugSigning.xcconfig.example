@@ -1,0 +1,9 @@
+// Copy to ~/.config/faderline/DebugSigning.xcconfig, set your Team ID, then
+// run scripts/link-debug-signing.sh in each existing checkout (new Copilot app
+// worktrees run it automatically).
+// Debug builds are then signed with a stable certificate, so macOS keeps the
+// Debug app's microphone permission across rebuilds. Use whichever identity
+// is in your keychain: "Apple Development" or "Developer ID Application".
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = Apple Development
