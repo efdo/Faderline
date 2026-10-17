@@ -236,6 +236,21 @@ The Xcode project (`Faderline.xcodeproj/project.pbxproj`) is maintained **in add
 
 If Xcode says "cannot find X in scope" but `swift build` succeeds, the pbxproj is missing the file reference.
 
+### Debug app identity and signing
+
+The Debug configuration uses `Config/Debug.xcconfig`, which sets the bundle ID
+to `com.faderline.app.debug`. This keeps local builds from sharing the
+installed release's microphone (TCC) grant and saved mixer preferences —
+switching between an ad-hoc-signed local build and the Developer ID release
+under the same bundle ID made macOS re-prompt for microphone access. Release
+builds keep `com.faderline.app`; the release script, verifier, and tests assert
+that, so **never move the bundle ID override into the Release configuration**.
+
+To avoid a prompt after every rebuild, copy
+`Config/DebugLocal.xcconfig.example` to `Config/DebugLocal.xcconfig`
+(git-ignored) and set your Team ID; Debug builds then sign with a stable Apple
+Development certificate. Without it they are ad-hoc signed.
+
 ---
 
 ## Known history & decisions

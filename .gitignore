@@ -8,3 +8,4 @@ dist/
 *.dmg
 *.xcarchive
 __pycache__/
+Config/DebugLocal.xcconfig

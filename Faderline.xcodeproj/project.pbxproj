@@ -43,6 +43,7 @@
 		2F0A8636F1AD435288543AB8 /* OutputStripViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputStripViewModel.swift; sourceTree = "<group>"; };
 		405AFF3E93BD48F4A551AF21 /* FaderlineApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaderlineApp.swift; sourceTree = "<group>"; };
 		42346062E9A64391AB989809 /* Faderline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Faderline.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0F16A0000000000000000A2 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		61930B8341B94C2782C35180 /* Faderline.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Faderline.entitlements; sourceTree = "<group>"; };
 		65C5BE9AB6024A4ABB16038B /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		786DFE9EF3C24401AF9AB122 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
@@ -79,6 +80,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		C0F16A0000000000000000A1 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				C0F16A0000000000000000A2 /* Debug.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
 		0832017461FD45D9B339755F = {
 			isa = PBXGroup;
 			children = (
@@ -86,6 +95,7 @@
 				A1B2C3D4E5F60718293A4B12 /* Assets.xcassets */,
 				B6AB45228605457CA3832D74 /* Info.plist */,
 				61930B8341B94C2782C35180 /* Faderline.entitlements */,
+				C0F16A0000000000000000A1 /* Config */,
 				334908684BB84AD19589B1D2 /* Frameworks */,
 				9731087258454C44B2254C49 /* Products */,
 			);
@@ -261,6 +271,7 @@
 /* Begin XCBuildConfiguration section */
 		0AB995F834DB435D9C7AFC22 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0F16A0000000000000000A2 /* Debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Faderline.entitlements;
@@ -275,7 +286,6 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.faderline.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

@@ -5,7 +5,9 @@ see [Getting started](GETTING_STARTED.md).
 
 The repository is named Faderline; the app is **Faderline.app**.
 Release packaging preserves that name and the `com.faderline.app` bundle
-identifier. It builds only the mixer app: no virtual microphone driver is
+identifier. Local Debug builds use `com.faderline.app.debug` (see
+`Config/Debug.xcconfig`) so they never share the release's microphone
+permission or preferences; that override must stay Debug-only. It builds only the mixer app: no virtual microphone driver is
 built, packaged, embedded, installed, updated, or removed. There is no
 installer, driver lifecycle change, automatic updater, or Sparkle integration.
 

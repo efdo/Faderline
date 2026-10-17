@@ -1,0 +1,6 @@
+// Copy to Config/DebugLocal.xcconfig (git-ignored) and set your Team ID.
+// Signs Debug builds with your Apple Development certificate so macOS keeps
+// the Debug app's microphone permission across rebuilds.
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = Apple Development
