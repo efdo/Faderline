@@ -16,5 +16,6 @@ if [[ -e "$link" && ! -L "$link" ]]; then
     echo "Keeping existing non-symlink $link"
     exit 0
 fi
+shared="$(cd "$(dirname "$shared")" && pwd -P)/$(basename "$shared")"
 ln -sfn "$shared" "$link"
 echo "Linked $link -> $shared"
