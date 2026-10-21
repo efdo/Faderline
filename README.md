@@ -24,6 +24,7 @@ drag **Faderline.app** to **Applications**. No build tools needed.
 - Pan, mute, or solo your sources.
 - Watch level meters, held peaks, and clip indicators.
 - Keep your device selections and mix settings between launches.
+- Recall named profiles without losing your working adjustments.
 
 Faderline uses audio devices already available on your Mac. It does not
 automatically capture every app's sound, stream to online services, or include
@@ -34,6 +35,37 @@ setup, explains the controls, and covers
 [common problems](docs/GETTING_STARTED.md#if-something-is-missing-or-silent).
 [Updates are manual](docs/GETTING_STARTED.md#update-faderline): quit normally
 with Command-Q and wait for exit before replacing the app.
+
+## Profiles
+
+The **Profiles** menu in the macOS menu bar lets you keep different setups for
+calls, recording, or listening. There is no profile UI in the mixer window; the
+window title shows the selected profile (for example "Faderline — Calls").
+
+**Default** is not a profile: it is your everyday mix, saved automatically just
+like before, and it never shows as edited. Your existing mix becomes Default on
+upgrade. Press Command-0 for Default and Command-1 through Command-9 for the
+first nine profiles.
+
+Use **Save As…** (Shift-Command-S) to create a profile from your current mix;
+on Default, **Save Profile…** (Command-S) does the same. Profiles include
+input/output devices, input channel mappings, pan, input/master levels, input
+mute, and routing to Main. With a profile selected, **Save Profile** updates its
+saved preset, and the title adds **— Edited** when the mix differs from it.
+
+Adjustments are always recovered automatically as a separate working draft for
+each profile, including after quitting. Switching restores that profile's draft
+without prompting or discarding changes. **Revert to Saved…** restores its saved
+preset; Revert and Delete ask before discarding data. Rename does not change the
+mix. Deleting the selected profile returns to Default; "Default" is reserved and
+cannot be used as a profile name.
+
+Solo clears when switching or reverting, while an engaged master mute stays
+engaged. Neither is saved or restored on relaunch. Latency remains app-wide.
+If a device or saved channel is unavailable, the affected input stays inactive
+(or output stops), with a quiet warning. The intended selections are preserved
+and reconnect by device identity; Faderline never substitutes another device.
+Switching devices or channels can briefly interrupt audio.
 
 ## Building from source
 

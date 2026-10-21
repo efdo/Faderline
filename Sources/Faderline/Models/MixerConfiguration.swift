@@ -1,12 +1,12 @@
 import Foundation
 
 /// Persisted mixer state: which devices/channels are selected, gains, pan, and routing.
-struct MixerConfiguration: Codable {
+struct MixerConfiguration: Codable, Equatable {
     var inputs: [InputStripConfig]
     var mainOutput: OutputStripConfig
     var lowLatencyModeEnabled: Bool
 
-    struct InputStripConfig: Codable {
+    struct InputStripConfig: Codable, Equatable {
         var deviceUID: String
         var leftChannelIndex: Int
         var rightChannelIndex: Int
@@ -76,7 +76,7 @@ struct MixerConfiguration: Codable {
         }
     }
 
-    struct OutputStripConfig: Codable {
+    struct OutputStripConfig: Codable, Equatable {
         var deviceUID: String
         /// Master fader position in dB (see `FaderTaper`).
         var gainDB: Float
@@ -141,19 +141,19 @@ struct MixerConfiguration: Codable {
 
     // MARK: - Persistence
 
-    private static let storageKey = "MixerConfiguration"
+    static let storageKey = "MixerConfiguration"
 
     /// `gainDB` can be `-.infinity` (fader parked at true silence). Standard
     /// JSON doesn't support non-finite numbers, so both the encoder and
     /// decoder must opt in to Foundation's string-based workaround.
-    private static func makeEncoder() -> JSONEncoder {
+    static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.nonConformingFloatEncodingStrategy = .convertToString(
             positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
         return encoder
     }
 
-    private static func makeDecoder() -> JSONDecoder {
+    static func makeDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.nonConformingFloatDecodingStrategy = .convertFromString(
             positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
@@ -174,4 +174,3 @@ struct MixerConfiguration: Codable {
         return config
     }
 }
-

@@ -75,6 +75,11 @@ struct FaderlineApp: App {
         }
         .windowResizability(.contentMinSize)
         .defaultSize(width: consoleSize.width, height: consoleSize.height)
+        .commands {
+            CommandMenu("Profiles") {
+                ProfileMenuItems(viewModel: mixerViewModel)
+            }
+        }
     }
 
     private func requestMicrophonePermission() async {

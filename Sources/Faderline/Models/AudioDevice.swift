@@ -25,6 +25,11 @@ struct AudioDevice: Identifiable, Hashable {
 }
 
 extension AudioDevice {
+    static func unavailable(uid: String, name: String) -> AudioDevice {
+        AudioDevice(id: kAudioObjectUnknown, uid: uid, name: "\(name) (Unavailable)",
+                    inputChannelCount: 0, outputChannelCount: 0, sampleRate: 0)
+    }
+
     /// Placeholder representing no device selected.
     static let none = AudioDevice(
         id: kAudioObjectUnknown,

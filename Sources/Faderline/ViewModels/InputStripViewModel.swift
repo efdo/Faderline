@@ -68,14 +68,15 @@ final class InputStripViewModel: Identifiable {
         return [.mono1, .mono2, .stereo12]
     }
 
-    var channelMode: ChannelMode {
+    var channelMode: ChannelMode? {
         if leftChannelIndex == 0 && rightChannelIndex == 1 {
             return .stereo12
         }
         if leftChannelIndex == 1 && rightChannelIndex == 1 {
             return .mono2
         }
-        return .mono1
+        if leftChannelIndex == 0 && rightChannelIndex == 0 { return .mono1 }
+        return nil
     }
 
     init(id: Int, label: String) {

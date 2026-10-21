@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EA0011223344556677889901 /* MixerProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0011223344556677889902 /* MixerProfiles.swift */; };
+		EA0011223344556677889903 /* ProfileMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0011223344556677889904 /* ProfileMenu.swift */; };
 		A1B2C3D4E5F60718293A4B11 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B12 /* Assets.xcassets */; };
 		0785EAFC169348CC804FF0E9 /* MixerConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E58BE60E14A4286BF87CA4B /* MixerConfiguration.swift */; };
 		08C9425BE29343EDB0F61F65 /* MixerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1393959C9A64828BBAA5CE0 /* MixerWindow.swift */; };
@@ -35,6 +37,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		EA0011223344556677889902 /* MixerProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerProfiles.swift; sourceTree = "<group>"; };
+		EA0011223344556677889904 /* ProfileMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMenu.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B12 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 		0474FED8E94643CFB161F3C1 /* LegacyMixerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyMixerEngine.swift; sourceTree = "<group>"; };
 		0F27C3ABF1454B14BC384661 /* AudioChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioChannel.swift; sourceTree = "<group>"; };
@@ -117,6 +121,7 @@
 				0F27C3ABF1454B14BC384661 /* AudioChannel.swift */,
 				F5403B998E3947F488B23662 /* AudioDevice.swift */,
 				1E58BE60E14A4286BF87CA4B /* MixerConfiguration.swift */,
+				EA0011223344556677889902 /* MixerProfiles.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -170,6 +175,7 @@
 			isa = PBXGroup;
 			children = (
 				B1393959C9A64828BBAA5CE0 /* MixerWindow.swift */,
+				EA0011223344556677889904 /* ProfileMenu.swift */,
 				A1B2C3D4E5F60718293A4B10 /* MixerTheme.swift */,
 				F0564B9E458BB25DDE8AB88E /* FaderView.swift */,
 				AC420EF33FDAB3EF19B4BE09 /* PanKnobView.swift */,
@@ -243,6 +249,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B152648A277941A79F057A42 /* DeviceManager.swift in Sources */,
+				EA0011223344556677889901 /* MixerProfiles.swift in Sources */,
+				EA0011223344556677889903 /* ProfileMenu.swift in Sources */,
 				3331B45357E8402EA5CB9227 /* LevelMeter.swift in Sources */,
 				9BDFA349C3AC49C2B1FE2A1A /* LegacyMixerEngine.swift in Sources */,
 				A1B2C3D4E5F60718293A4B01 /* ChannelRingBuffer.swift in Sources */,
