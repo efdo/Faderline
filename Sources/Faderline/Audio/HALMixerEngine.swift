@@ -107,6 +107,11 @@ final class HALMixerEngine {
         /// Running peak (max magnitude) since the last UI drain via `exchange(0, ...)`.
         let peakL = Atomic<Float>(0)
         let peakR = Atomic<Float>(0)
+        /// Render-thread-owned copies of the controls. `mix()` refreshes them
+        /// only from a coherent read (see `ParameterSequence`), so a batched
+        /// profile recall is never heard half-applied.
+        var applied: StripParams
+        var pending: StripParams
 
         init(stripIndex: Int, deviceSlot: Int, leftChannel: Int, rightChannel: Int,
              volume: Float, route: Bool, pan: Float, mute: Bool, solo: Bool) {
@@ -121,7 +126,28 @@ final class HALMixerEngine {
             self.panR = Atomic(panGains.right)
             self.mute = Atomic(mute)
             self.solo = Atomic(solo)
+            applied = StripParams(volume: volume, panL: panGains.left, panR: panGains.right,
+                                  route: route, mute: mute, solo: solo)
+            pending = applied
         }
+
+        func loadParams() -> StripParams {
+            StripParams(volume: volume.load(ordering: .acquiring),
+                        panL: panL.load(ordering: .acquiring),
+                        panR: panR.load(ordering: .acquiring),
+                        route: route.load(ordering: .acquiring),
+                        mute: mute.load(ordering: .acquiring),
+                        solo: solo.load(ordering: .acquiring))
+        }
+    }
+
+    private struct StripParams {
+        var volume: Float
+        var panL: Float
+        var panR: Float
+        var route: Bool
+        var mute: Bool
+        var solo: Bool
     }
 
     /// Master bus controls owned by the engine for its whole lifetime (not per
@@ -129,6 +155,11 @@ final class HALMixerEngine {
     private final class MasterControls: @unchecked Sendable {
         let outGain = Atomic<Float>(1.0)
         let outMute = Atomic<Bool>(false)
+        /// Guards batched updates (`applyParameterBatch`) across all controls.
+        let sequence = ParameterSequence()
+        /// Bumped by a batch that resets meters; the render thread clears its
+        /// peak accumulators when it first applies the new epoch.
+        let meterEpoch = Atomic<Int>(0)
     }
 
     @ObservationIgnored private let master = MasterControls()
@@ -147,6 +178,13 @@ final class HALMixerEngine {
         /// keep metering) rather than being rebuilt out of the graph.
         let anySolo: Atomic<Bool>
         let master: MasterControls
+        /// Last meter epoch whose pre-epoch peaks the render thread discarded.
+        let appliedMeterEpoch: Atomic<Int>
+        // Render-thread-owned coherent master/solo values (see `StripSlot.applied`).
+        var appliedAnySolo: Bool
+        var appliedOutGain: Float
+        var appliedOutMute: Bool
+        var appliedEpoch: Int
 
         init(devices: [DeviceSlot], strips: [StripSlot], master: MasterControls) {
             self.devices = devices
@@ -154,8 +192,15 @@ final class HALMixerEngine {
             let pairs = strips.map {
                 (routed: $0.route.load(ordering: .relaxed), soloed: $0.solo.load(ordering: .relaxed))
             }
-            self.anySolo = Atomic(HALMixerEngine.anySoloed(among: pairs))
+            let anySolo = HALMixerEngine.anySoloed(among: pairs)
+            self.anySolo = Atomic(anySolo)
             self.master = master
+            let epoch = master.meterEpoch.load(ordering: .acquiring)
+            appliedMeterEpoch = Atomic(epoch)
+            appliedAnySolo = anySolo
+            appliedOutGain = master.outGain.load(ordering: .acquiring)
+            appliedOutMute = master.outMute.load(ordering: .acquiring)
+            appliedEpoch = epoch
         }
     }
 
@@ -207,6 +252,10 @@ final class HALMixerEngine {
     var inputPeaks: [Int: (left: Float, right: Float)] {
         guard let state = renderState else { return [:] }
         var result: [Int: (left: Float, right: Float)] = [:]
+        guard meterEpochApplied(state) else {
+            for strip in state.strips { result[strip.stripIndex] = (0, 0) }
+            return result
+        }
         for strip in state.strips {
             let l = strip.peakL.exchange(0, ordering: .relaxed)
             let r = strip.peakR.exchange(0, ordering: .relaxed)
@@ -219,9 +268,15 @@ final class HALMixerEngine {
     /// guard in `mix()`, so a drained value `>= 1.0` (0 dBFS) means the mix
     /// genuinely clipped, not merely that the limiter engaged.
     var outputPeak: (left: Float, right: Float) {
-        guard let state = renderState else { return (0, 0) }
+        guard let state = renderState, meterEpochApplied(state) else { return (0, 0) }
         return (state.outPeakL.exchange(0, ordering: .relaxed),
                 state.outPeakR.exchange(0, ordering: .relaxed))
+    }
+
+    /// False between a meter-resetting batch and the render thread applying it,
+    /// so peaks captured before a profile recall are never reported after it.
+    private func meterEpochApplied(_ state: RenderState) -> Bool {
+        state.appliedMeterEpoch.load(ordering: .acquiring) == master.meterEpoch.load(ordering: .relaxed)
     }
 
     /// Diagnostics: total ring under/overruns + starved resampler pulls + current levels.
@@ -377,14 +432,14 @@ final class HALMixerEngine {
     func setVolume(_ volume: Float, forInput index: Int) {
         guard let state = renderState else { return }
         for strip in state.strips where strip.stripIndex == index {
-            strip.volume.store(volume, ordering: .relaxed)
+            strip.volume.store(volume, ordering: .releasing)
         }
     }
 
     func setRouteToMain(_ enabled: Bool, forInput index: Int) {
         guard let state = renderState else { return }
         for strip in state.strips where strip.stripIndex == index {
-            strip.route.store(enabled, ordering: .relaxed)
+            strip.route.store(enabled, ordering: .releasing)
         }
         // Un/re-routing a strip can change whether its solo flag "counts" —
         // see `anySoloed(among:)`.
@@ -398,15 +453,15 @@ final class HALMixerEngine {
         guard let state = renderState else { return }
         let gains = FaderTaper.panGains(pan)
         for strip in state.strips where strip.stripIndex == index {
-            strip.panL.store(gains.left, ordering: .relaxed)
-            strip.panR.store(gains.right, ordering: .relaxed)
+            strip.panL.store(gains.left, ordering: .releasing)
+            strip.panR.store(gains.right, ordering: .releasing)
         }
     }
 
     func setMute(_ muted: Bool, forInput index: Int) {
         guard let state = renderState else { return }
         for strip in state.strips where strip.stripIndex == index {
-            strip.mute.store(muted, ordering: .relaxed)
+            strip.mute.store(muted, ordering: .releasing)
         }
     }
 
@@ -416,7 +471,7 @@ final class HALMixerEngine {
     func setSolo(_ soloed: Bool, forInput index: Int) {
         guard let state = renderState else { return }
         for strip in state.strips where strip.stripIndex == index {
-            strip.solo.store(soloed, ordering: .relaxed)
+            strip.solo.store(soloed, ordering: .releasing)
         }
         recomputeAnySolo(state)
     }
@@ -425,7 +480,7 @@ final class HALMixerEngine {
         let pairs = state.strips.map {
             (routed: $0.route.load(ordering: .relaxed), soloed: $0.solo.load(ordering: .relaxed))
         }
-        state.anySolo.store(Self.anySoloed(among: pairs), ordering: .relaxed)
+        state.anySolo.store(Self.anySoloed(among: pairs), ordering: .releasing)
     }
 
     /// Pure solo-in-place gating logic, factored out (and left internal, not
@@ -439,11 +494,24 @@ final class HALMixerEngine {
     }
 
     func setOutputVolume(_ gain: Float) {
-        master.outGain.store(gain, ordering: .relaxed)
+        master.outGain.store(gain, ordering: .releasing)
     }
 
     func setOutputMuted(_ muted: Bool) {
-        master.outMute.store(muted, ordering: .relaxed)
+        master.outMute.store(muted, ordering: .releasing)
+    }
+
+    /// Applies several parameter changes so the render thread switches to all
+    /// of them at the same buffer boundary (never a mix of old and new).
+    /// `resetPeaks` also discards peaks captured before the batch took effect.
+    /// Call from one (UI) thread; the body must only call the setters above.
+    func applyParameterBatch(resetPeaks: Bool = false, _ body: () -> Void) {
+        master.sequence.beginWrite()
+        body()
+        if resetPeaks {
+            master.meterEpoch.store(master.meterEpoch.load(ordering: .relaxed) &+ 1, ordering: .releasing)
+        }
+        master.sequence.endWrite()
     }
 
     // MARK: - Render-thread mix (static: no self capture)
@@ -462,7 +530,33 @@ final class HALMixerEngine {
             device.reader.pull(into: UnsafePointer(device.scratch), frameCount: n)
         }
 
-        let anySolo = state.anySolo.load(ordering: .relaxed)
+        // Refresh the applied controls only from a coherent read; while a batch
+        // is being written (or one landed mid-read), keep the previous set.
+        let master = state.master
+        if let token = master.sequence.beginRead() {
+            for strip in state.strips { strip.pending = strip.loadParams() }
+            let anySolo = state.anySolo.load(ordering: .acquiring)
+            let outGain = master.outGain.load(ordering: .acquiring)
+            let outMute = master.outMute.load(ordering: .acquiring)
+            let epoch = master.meterEpoch.load(ordering: .acquiring)
+            if master.sequence.validateRead(token) {
+                for strip in state.strips { strip.applied = strip.pending }
+                state.appliedAnySolo = anySolo
+                state.appliedOutGain = outGain
+                state.appliedOutMute = outMute
+                if epoch != state.appliedEpoch {
+                    for strip in state.strips {
+                        strip.peakL.store(0, ordering: .relaxed)
+                        strip.peakR.store(0, ordering: .relaxed)
+                    }
+                    state.outPeakL.store(0, ordering: .relaxed)
+                    state.outPeakR.store(0, ordering: .relaxed)
+                    state.appliedEpoch = epoch
+                    state.appliedMeterEpoch.store(epoch, ordering: .releasing)
+                }
+            }
+        }
+        let anySolo = state.appliedAnySolo
 
         // 2. Per strip: channel map → pan → volume → accumulate into the mix bus.
         for strip in state.strips {
@@ -472,10 +566,11 @@ final class HALMixerEngine {
             let srcL: UnsafeMutablePointer<Float>? = lIdx < device.channelCount ? device.scratch[lIdx] : nil
             let srcR: UnsafeMutablePointer<Float>? = rIdx < device.channelCount ? device.scratch[rIdx] : nil
 
-            let vol = strip.volume.load(ordering: .relaxed)
-            let routed = strip.route.load(ordering: .relaxed)
-            let muted = strip.mute.load(ordering: .relaxed)
-            let soloed = strip.solo.load(ordering: .relaxed)
+            let params = strip.applied
+            let vol = params.volume
+            let routed = params.route
+            let muted = params.mute
+            let soloed = params.solo
             // Solo-in-place: when any strip is soloed, only soloed strips reach the bus.
             let audible = routed && !muted && (!anySolo || soloed)
 
@@ -504,8 +599,8 @@ final class HALMixerEngine {
             }
 
             if audible, vol > 0 {
-                var volL = vol * strip.panL.load(ordering: .relaxed)
-                var volR = vol * strip.panR.load(ordering: .relaxed)
+                var volL = vol * params.panL
+                var volR = vol * params.panR
                 if let srcL { vDSP_vsma(srcL, 1, &volL, dest[0], 1, dest[0], 1, vDSP_Length(n)) }
                 if let srcR { vDSP_vsma(srcR, 1, &volR, dest[1], 1, dest[1], 1, vDSP_Length(n)) }
             }
@@ -514,8 +609,7 @@ final class HALMixerEngine {
         // 3. Master gain/mute, then peak (measured *before* the soft-clip
         // guard so >= 1.0 means a genuine over), then the clip guard itself,
         // then post-limiter RMS metering.
-        let outMuted = state.master.outMute.load(ordering: .relaxed)
-        var outGain = outMuted ? 0 : state.master.outGain.load(ordering: .relaxed)
+        var outGain = state.appliedOutMute ? 0 : state.appliedOutGain
         if outGain != 1.0 {
             vDSP_vsmul(dest[0], 1, &outGain, dest[0], 1, vDSP_Length(n))
             vDSP_vsmul(dest[1], 1, &outGain, dest[1], 1, vDSP_Length(n))

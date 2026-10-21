@@ -58,6 +58,7 @@ Sources/Faderline/
 │   ├── HALAudioUnits.swift        # HALInputUnit + HALOutputUnit (raw AUHAL wrappers)
 │   ├── HALMixerEngine.swift       # ★ Active engine — AUHAL-based, LadioCast-style
 │   ├── LegacyMixerEngine.swift    # AVAudioEngine-based engine (kept for A/B, do NOT delete yet)
+│   ├── ParameterSequence.swift    # Lock-free seqlock for coherent batched parameter updates
 │   ├── FaderTaper.swift           # Pure dB↔position↔gain math + pan law — no UI import, unit-tested
 │   ├── DeviceManager.swift        # CoreAudio HAL device enumeration + hot-plug
 │   └── LevelMeter.swift           # Unused tap helper (legacy, safe to ignore)
@@ -165,6 +166,14 @@ Pan is the one addition that could easily leak `cos`/`sin` into the render
 thread — don't let it. `setPan(_:forInput:)` resolves `FaderTaper.panGains(_:)`
 on the calling (UI) thread and stores the two resulting floats (`panL`/`panR`)
 as atomics; `mix()` only ever does a relaxed load and a multiply.
+
+Batched updates (profile recall) go through
+`HALMixerEngine.applyParameterBatch(resetPeaks:_:)`, guarded by the lock-free
+`ParameterSequence` seqlock. At each buffer start `mix()` copies every control
+into render-owned `applied` fields only if the read was coherent; otherwise it
+keeps the previous buffer's values, so a recall is never heard half-applied.
+`resetPeaks` bumps a meter epoch; the render thread clears its peak
+accumulators when adopting it, and the peak getters report 0 until then.
 
 Peak metering is a plain (non-atomic-RMW) load-compare-store running max on
 the render thread, drained via `Atomic.exchange(0, ...)` on the UI thread at

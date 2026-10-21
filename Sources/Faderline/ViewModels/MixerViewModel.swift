@@ -457,16 +457,20 @@ final class MixerViewModel {
         outputMeterAnimationUntil = .distantPast
     }
 
-    private func applyLiveParameters() {
-        for strip in inputStrips {
-            mixerEngine.setVolume(strip.gain, forInput: strip.id)
-            mixerEngine.setPan(strip.pan, forInput: strip.id)
-            mixerEngine.setMute(strip.muted, forInput: strip.id)
-            mixerEngine.setRouteToMain(strip.routeToMain, forInput: strip.id)
-            mixerEngine.setSolo(strip.soloed, forInput: strip.id)
+    /// Pushes every current control to the engine as one batch, so a live
+    /// profile recall is heard all at once rather than control by control.
+    private func applyLiveParameters(resetPeaks: Bool = false) {
+        mixerEngine.applyParameterBatch(resetPeaks: resetPeaks) {
+            for strip in inputStrips {
+                mixerEngine.setVolume(strip.gain, forInput: strip.id)
+                mixerEngine.setPan(strip.pan, forInput: strip.id)
+                mixerEngine.setMute(strip.muted, forInput: strip.id)
+                mixerEngine.setRouteToMain(strip.routeToMain, forInput: strip.id)
+                mixerEngine.setSolo(strip.soloed, forInput: strip.id)
+            }
+            mixerEngine.setOutputVolume(mainOutput.gain)
+            mixerEngine.setOutputMuted(mainOutput.muted)
         }
-        mixerEngine.setOutputVolume(mainOutput.gain)
-        mixerEngine.setOutputMuted(mainOutput.muted)
     }
 
     // MARK: - Profiles
@@ -527,7 +531,7 @@ final class MixerViewModel {
                     || (startsAudio && !mixerEngine.isRunning && resolvedSnapshot.output.id != AudioDevice.none.id) {
                     rebuildEngine()
                 } else {
-                    applyLiveParameters()
+                    applyLiveParameters(resetPeaks: true)
                 }
             }
             return true

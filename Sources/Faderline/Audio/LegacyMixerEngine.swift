@@ -572,6 +572,11 @@ final class LegacyMixerEngine {
         applyOutputVolume()
     }
 
+    /// Shape-compatible with `HALMixerEngine`; AVAudioEngine has no batch boundary.
+    func applyParameterBatch(resetPeaks: Bool = false, _ body: () -> Void) {
+        body()
+    }
+
     /// Peak metering isn't implemented for the legacy engine (kept only for
     /// A/B hardware comparison, not the active engine) — always reports 0.
     var inputPeaks: [Int: (left: Float, right: Float)] { [:] }

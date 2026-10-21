@@ -765,3 +765,39 @@ final class PeakHoldTests: XCTestCase {
         XCTAssertEqual(hold.displayValue(at: t0), 1.0, accuracy: 0.001)
     }
 }
+
+final class ParameterSequenceTests: XCTestCase {
+    func testReadOutsideBatchValidates() {
+        let sequence = ParameterSequence()
+        let token = try! XCTUnwrap(sequence.beginRead())
+        XCTAssertTrue(sequence.validateRead(token))
+    }
+
+    func testReadDuringBatchIsRejected() {
+        let sequence = ParameterSequence()
+        sequence.beginWrite()
+        XCTAssertNil(sequence.beginRead(), "a half-written batch must not be applied")
+        sequence.endWrite()
+        XCTAssertNotNil(sequence.beginRead())
+    }
+
+    func testBatchLandingMidReadInvalidatesRead() {
+        let sequence = ParameterSequence()
+        let token = try! XCTUnwrap(sequence.beginRead())
+        sequence.beginWrite()
+        sequence.endWrite()
+        XCTAssertFalse(sequence.validateRead(token), "a read overlapping a batch must be discarded")
+        XCTAssertNotNil(sequence.beginRead())
+    }
+
+    func testBatchSettersSafeWhileStopped() {
+        let engine = HALMixerEngine()
+        engine.applyParameterBatch(resetPeaks: true) {
+            engine.setVolume(2, forInput: 0)
+            engine.setMute(true, forInput: 0)
+            engine.setOutputVolume(0.5)
+        }
+        XCTAssertTrue(engine.inputPeaks.isEmpty)
+        XCTAssertEqual(engine.outputPeak.left, 0)
+    }
+}
