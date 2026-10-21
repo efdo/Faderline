@@ -58,6 +58,7 @@ Sources/Faderline/
 │   ├── HALAudioUnits.swift        # HALInputUnit + HALOutputUnit (raw AUHAL wrappers)
 │   ├── HALMixerEngine.swift       # ★ Active engine — AUHAL-based, LadioCast-style
 │   ├── LegacyMixerEngine.swift    # AVAudioEngine-based engine (kept for A/B, do NOT delete yet)
+│   ├── ParameterSequence.swift    # Lock-free seqlock for coherent batched parameter updates
 │   ├── FaderTaper.swift           # Pure dB↔position↔gain math + pan law — no UI import, unit-tested
 │   ├── DeviceManager.swift        # CoreAudio HAL device enumeration + hot-plug
 │   └── LevelMeter.swift           # Unused tap helper (legacy, safe to ignore)
@@ -166,6 +167,14 @@ thread — don't let it. `setPan(_:forInput:)` resolves `FaderTaper.panGains(_:)
 on the calling (UI) thread and stores the two resulting floats (`panL`/`panR`)
 as atomics; `mix()` only ever does a relaxed load and a multiply.
 
+Batched updates (profile recall) go through
+`HALMixerEngine.applyParameterBatch(resetPeaks:_:)`, guarded by the lock-free
+`ParameterSequence` seqlock. At each buffer start `mix()` copies every control
+into render-owned `applied` fields only if the read was coherent; otherwise it
+keeps the previous buffer's values, so a recall is never heard half-applied.
+`resetPeaks` bumps a meter epoch; the render thread clears its peak
+accumulators when adopting it, and the peak getters report 0 until then.
+
 Peak metering is a plain (non-atomic-RMW) load-compare-store running max on
 the render thread, drained via `Atomic.exchange(0, ...)` on the UI thread at
 ~30 Hz. This is deliberately racy: worst case the UI misses one render
@@ -226,6 +235,42 @@ main output) aligned against a left-hand row-label gutter
   the current state and describe the click action.
 
 ---
+
+## Profiles and working drafts
+
+- `MixerProfiles.swift` defines a versioned `MixerProfileLibrary`, saved/draft
+  snapshots, validation, hardware resolution, and injectable UserDefaults storage.
+  `MixerProfiles` is the authoritative persistence key after one-time migration
+  from `MixerConfiguration`; leave the original blob intact. Version 2 adds the
+  profile-less Default working mix (`defaultMix`, `activeID == nil`); version 1
+  libraries decode by turning their "Default" profile into that mix. Preserve corrupt or
+  unsupported data and surface the load error rather than overwriting it.
+- Default is not a profile: it autosaves, is never Edited, and cannot be saved,
+  renamed, reverted, or deleted (Save on Default opens Save As). Its name is
+  reserved. Deleting the active profile (including the last) returns to Default.
+- Every profile has a separately autosaved working draft. Only explicit Save
+  updates its saved snapshot; switching restores the destination draft. Profile
+  equality excludes cached device display names and app-wide latency (stored
+  separately under `MixerLowLatencyModeEnabled`). Use the shared configuration
+  codec to preserve negative-infinity gains.
+- `MixerViewModel` applies recall as a batch, keeping strip identities stable.
+  Resolve UIDs against direction-appropriate devices; unavailable selections use
+  an unknown-device-ID placeholder that retains their UID. Do not erase desired
+  selections or clamp saved channels during hot-plug. Resolve unavailable channel
+  mappings to inactive inputs, not substituted channels. Reconnect by UID.
+- Recall/Revert clears Solo, preserves current master mute, and resets meter
+  state. Neither temporary control is stored in profiles. Parameter-only recall
+  uses atomic setters; topology changes use one existing off-main lifecycle
+  rebuild. Reapply current controls after the latest rebuild completes so edits
+  during startup cannot be lost to its snapshot.
+- `ProfileMenu.swift` supplies the menu-bar Profiles menu (⌘0 Default, ⌘1–⌘9
+  profiles in list order) and native sheets. There is deliberately no profile
+  control in the window (no toolbar, no console row); the window title shows
+  "Faderline — Name" plus "— Edited" for an edited profile. Pending dB text
+  edits commit before profile operations/termination; recall revisions prevent
+  disappearing fields from writing old values into the newly selected profile.
+- `ProfileTests.swift` exercises storage in isolated defaults suites and view
+  models with `startsAudio: false`; never start hardware for profile-state tests.
 
 ## Xcode project maintenance
 

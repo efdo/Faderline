@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EA0011223344556677889901 /* MixerProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0011223344556677889902 /* MixerProfiles.swift */; };
+		EA0011223344556677889903 /* ProfileMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0011223344556677889904 /* ProfileMenu.swift */; };
 		A1B2C3D4E5F60718293A4B11 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B12 /* Assets.xcassets */; };
 		0785EAFC169348CC804FF0E9 /* MixerConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E58BE60E14A4286BF87CA4B /* MixerConfiguration.swift */; };
 		08C9425BE29343EDB0F61F65 /* MixerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1393959C9A64828BBAA5CE0 /* MixerWindow.swift */; };
@@ -24,6 +26,7 @@
 		A1B2C3D4E5F60718293A4B07 /* HALMixerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B08 /* HALMixerEngine.swift */; };
 		A1B2C3D4E5F60718293A4B09 /* MixerTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B10 /* MixerTheme.swift */; };
 		DD65FFEBCD78CE57C1D0C472 /* FaderTaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB623D7FD1D579E5A18BBC5D /* FaderTaper.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* ParameterSequence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* ParameterSequence.swift */; };
 		B2C0294BDE8AF72AEA3D2E9C /* FaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0564B9E458BB25DDE8AB88E /* FaderView.swift */; };
 		3A822282B748F334DB601D33 /* PanKnobView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC420EF33FDAB3EF19B4BE09 /* PanKnobView.swift */; };
 		DC0453E36B32B37458CF74D2 /* ChannelMeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5320E7EB2196B5BD3A2AE8BC /* ChannelMeterView.swift */; };
@@ -35,6 +38,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		EA0011223344556677889902 /* MixerProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerProfiles.swift; sourceTree = "<group>"; };
+		EA0011223344556677889904 /* ProfileMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMenu.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B12 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 		0474FED8E94643CFB161F3C1 /* LegacyMixerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyMixerEngine.swift; sourceTree = "<group>"; };
 		0F27C3ABF1454B14BC384661 /* AudioChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioChannel.swift; sourceTree = "<group>"; };
@@ -53,6 +58,7 @@
 		A1B2C3D4E5F60718293A4B06 /* HALAudioUnits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HALAudioUnits.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B08 /* HALMixerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HALMixerEngine.swift; sourceTree = "<group>"; };
 		BB623D7FD1D579E5A18BBC5D /* FaderTaper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaderTaper.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5D /* ParameterSequence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParameterSequence.swift; sourceTree = "<group>"; };
 		F0564B9E458BB25DDE8AB88E /* FaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaderView.swift; sourceTree = "<group>"; };
 		AC420EF33FDAB3EF19B4BE09 /* PanKnobView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanKnobView.swift; sourceTree = "<group>"; };
 		5320E7EB2196B5BD3A2AE8BC /* ChannelMeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelMeterView.swift; sourceTree = "<group>"; };
@@ -117,6 +123,7 @@
 				0F27C3ABF1454B14BC384661 /* AudioChannel.swift */,
 				F5403B998E3947F488B23662 /* AudioDevice.swift */,
 				1E58BE60E14A4286BF87CA4B /* MixerConfiguration.swift */,
+				EA0011223344556677889902 /* MixerProfiles.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -142,6 +149,7 @@
 				A1B2C3D4E5F60718293A4B06 /* HALAudioUnits.swift */,
 				A1B2C3D4E5F60718293A4B08 /* HALMixerEngine.swift */,
 				BB623D7FD1D579E5A18BBC5D /* FaderTaper.swift */,
+				A1B2C3D4E5F60718293A4B5D /* ParameterSequence.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -170,6 +178,7 @@
 			isa = PBXGroup;
 			children = (
 				B1393959C9A64828BBAA5CE0 /* MixerWindow.swift */,
+				EA0011223344556677889904 /* ProfileMenu.swift */,
 				A1B2C3D4E5F60718293A4B10 /* MixerTheme.swift */,
 				F0564B9E458BB25DDE8AB88E /* FaderView.swift */,
 				AC420EF33FDAB3EF19B4BE09 /* PanKnobView.swift */,
@@ -243,6 +252,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B152648A277941A79F057A42 /* DeviceManager.swift in Sources */,
+				EA0011223344556677889901 /* MixerProfiles.swift in Sources */,
+				EA0011223344556677889903 /* ProfileMenu.swift in Sources */,
 				3331B45357E8402EA5CB9227 /* LevelMeter.swift in Sources */,
 				9BDFA349C3AC49C2B1FE2A1A /* LegacyMixerEngine.swift in Sources */,
 				A1B2C3D4E5F60718293A4B01 /* ChannelRingBuffer.swift in Sources */,
@@ -259,6 +270,7 @@
 				08C9425BE29343EDB0F61F65 /* MixerWindow.swift in Sources */,
 				A1B2C3D4E5F60718293A4B09 /* MixerTheme.swift in Sources */,
 				DD65FFEBCD78CE57C1D0C472 /* FaderTaper.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5C /* ParameterSequence.swift in Sources */,
 				B2C0294BDE8AF72AEA3D2E9C /* FaderView.swift in Sources */,
 				3A822282B748F334DB601D33 /* PanKnobView.swift in Sources */,
 				DC0453E36B32B37458CF74D2 /* ChannelMeterView.swift in Sources */,

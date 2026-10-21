@@ -17,6 +17,17 @@ final class MixerViewModel {
     var inputStrips: [InputStripViewModel]
     var mainOutput: OutputStripViewModel
     var lowLatencyModeEnabled = false
+    private(set) var profileLibrary = MixerProfileLibrary(configuration: .default)
+    private(set) var profileError: String?
+    private(set) var profilesUnavailable = false
+    var profileDialog: ProfileDialog?
+    private(set) var profileRecallRevision = 0
+    private(set) var hasPendingGainEdit = false
+    static let commitPendingEditsNotification = Notification.Name("FaderlineCommitPendingEdits")
+
+    @ObservationIgnored private let profileStore: MixerProfileStore
+    @ObservationIgnored private let startsAudio: Bool
+    private var isRebuilding = false
 
     private var levelTimer: Timer?
 
@@ -36,7 +47,9 @@ final class MixerViewModel {
     private static let meterPeakAnimationDuration: TimeInterval = 1.5
     private static let disableMetersDefaultsKey = "DisableMeters"
 
-    init() {
+    init(profileStore: MixerProfileStore = MixerProfileStore(), startsAudio: Bool = true) {
+        self.profileStore = profileStore
+        self.startsAudio = startsAudio
         inputStrips = [
             InputStripViewModel(id: 0, label: "Input 1"),
             InputStripViewModel(id: 1, label: "Input 2"),
@@ -45,6 +58,7 @@ final class MixerViewModel {
 
         loadConfiguration()
         deviceManager.onDevicesChanged = { [weak self] in self?.reconcileSelectedDevices() }
+        guard startsAudio else { return }
         startLevelPolling()
         // Defer engine start to the next main-run-loop cycle so the run loop
         // is already live when AudioComponentInstanceNew's Mach IPC response
@@ -64,6 +78,8 @@ final class MixerViewModel {
     /// for the next launch. The stop is queued behind any in-flight start so
     /// it can't be overtaken; `completion` runs on main once cleanup is done.
     func shutdownEngine(completion: @escaping () -> Void) {
+        NotificationCenter.default.post(name: Self.commitPendingEditsNotification, object: self)
+        saveConfiguration()
         // Invalidate queued rebuilds so none restart the engine after exit.
         isShuttingDown = true
         rebuildGeneration.next()
@@ -80,52 +96,20 @@ final class MixerViewModel {
     // MARK: - Actions
 
     func selectInputDevice(_ device: AudioDevice, forStrip strip: InputStripViewModel) {
+        guard strip.selectedDevice != device else { return }
         strip.selectedDevice = device
         strip.leftChannelIndex = 0
         strip.rightChannelIndex = min(1, max(0, device.inputChannelCount - 1))
         rebuildEngine()
     }
 
-    /// After a hot-plug change, clear any selection whose device is gone so
-    /// the strip shows "Select Device…" instead of silently following a
-    /// different (e.g. system default) device. Devices that reappear with a
-    /// new object ID are refreshed in place.
     private func reconcileSelectedDevices() {
-        var changed = false
-        for strip in inputStrips where strip.selectedDevice.id != AudioDevice.none.id {
-            if let current = deviceManager.inputDevices.first(where: { $0.uid == strip.selectedDevice.uid }) {
-                if current != strip.selectedDevice {
-                    strip.selectedDevice = current
-                    let maxIndex = max(0, current.inputChannelCount - 1)
-                    strip.leftChannelIndex = min(strip.leftChannelIndex, maxIndex)
-                    strip.rightChannelIndex = min(strip.rightChannelIndex, maxIndex)
-                    changed = true
-                }
-            } else {
-                logger.notice("Input device '\(strip.selectedDevice.name, privacy: .public)' disappeared; clearing \(strip.label, privacy: .public)")
-                strip.selectedDevice = .none
-                strip.leftChannelIndex = 0
-                strip.rightChannelIndex = 1
-                strip.meter.levelLeft = 0
-                strip.meter.levelRight = 0
-                strip.meter.peakLeft = 0
-                strip.meter.peakRight = 0
-                changed = true
-            }
+        let previous = inputStrips.map(\.selectedDevice) + [mainOutput.selectedDevice]
+        resolveSelectedDevices(snapshot: currentSnapshot)
+        if previous != inputStrips.map(\.selectedDevice) + [mainOutput.selectedDevice] {
+            resetMeters()
+            rebuildEngine()
         }
-        if mainOutput.selectedDevice.id != AudioDevice.none.id {
-            if let current = deviceManager.outputDevices.first(where: { $0.uid == mainOutput.selectedDevice.uid }) {
-                if current != mainOutput.selectedDevice {
-                    mainOutput.selectedDevice = current
-                    changed = true
-                }
-            } else {
-                logger.notice("Output device '\(self.mainOutput.selectedDevice.name, privacy: .public)' disappeared; clearing Main Output")
-                mainOutput.selectedDevice = .none
-                changed = true
-            }
-        }
-        if changed { rebuildEngine() }
     }
 
     func selectOutputDevice(_ device: AudioDevice) {
@@ -136,6 +120,7 @@ final class MixerViewModel {
     func setLowLatencyModeEnabled(_ enabled: Bool) {
         guard lowLatencyModeEnabled != enabled else { return }
         lowLatencyModeEnabled = enabled
+        profileStore.lowLatencyModeEnabled = enabled
         rebuildEngine()
     }
 
@@ -225,8 +210,9 @@ final class MixerViewModel {
     // MARK: - Engine management
 
     private func rebuildEngine() {
+        saveConfiguration()
+        guard startsAudio else { return }
         guard !isShuttingDown else {
-            saveConfiguration()
             return
         }
         // Snapshot config values on the calling (main) thread before touching
@@ -238,9 +224,10 @@ final class MixerViewModel {
             logger.info("rebuildEngine: input[\(strip.id, privacy: .public)] '\(strip.selectedDevice.name, privacy: .public)' id=\(strip.selectedDevice.id, privacy: .public) L=ch\(strip.leftChannelIndex, privacy: .public) R=ch\(strip.rightChannelIndex, privacy: .public) route=\(strip.routeToMain, privacy: .public) gainDB=\(strip.gainDB, privacy: .public) pan=\(strip.pan, privacy: .public) mute=\(strip.muted, privacy: .public) solo=\(strip.soloed, privacy: .public)")
         }
 
-        let inputs = inputStrips.map { strip in
+        let resolved = resolvedSnapshot
+        let inputs = inputStrips.enumerated().map { index, strip in
             ActiveMixerEngine.InputConfig(
-                deviceID: strip.selectedDevice.id,
+                deviceID: resolved.inputs[index].id,
                 leftChannel: strip.leftChannelIndex,
                 rightChannel: strip.rightChannelIndex,
                 volume: strip.gain,
@@ -251,12 +238,10 @@ final class MixerViewModel {
             )
         }
         let output = ActiveMixerEngine.OutputConfig(
-            deviceID: mainOutput.selectedDevice.id,
+            deviceID: resolved.output.id,
             volume: mainOutput.gain,
             mute: mainOutput.muted
         )
-        saveConfiguration()
-
         // `AudioComponentInstanceNew` (called deep inside `start()`) makes a
         // synchronous Mach IPC call to coreaudiod whose reply is dispatched on
         // the main thread. Calling it on the main thread therefore deadlocks.
@@ -270,19 +255,25 @@ final class MixerViewModel {
         let latencyMode: ActiveMixerEngine.LatencyMode = lowLatencyModeEnabled ? .low : .normal
         let generationCounter = rebuildGeneration
         let generation = generationCounter.next()
-        engineQueue.async {
+        isRebuilding = true
+        engineQueue.async { [weak self] in
             // A newer rebuild is queued behind us; let it build the final graph.
             guard generationCounter.isCurrent(generation) else { return }
             engine.latencyMode = latencyMode
             do {
                 try engine.start(inputs: inputs, output: output)
                 let isRunning = engine.isRunning
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, generationCounter.isCurrent(generation), !self.isShuttingDown else { return }
+                    self.isRebuilding = false
+                    self.applyLiveParameters()
                     logger.notice("✅ Engine started successfully, isRunning=\(isRunning, privacy: .public)")
                 }
             } catch {
                 let desc = error.localizedDescription
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, generationCounter.isCurrent(generation), !self.isShuttingDown else { return }
+                    self.isRebuilding = false
                     logger.error("❌ MixerEngine failed to start: \(error, privacy: .public)")
                     engine.lastError = desc
                 }
@@ -295,6 +286,7 @@ final class MixerViewModel {
     private func startLevelPolling() {
         levelTimer = Timer.scheduledTimer(withTimeInterval: Self.meterPollInterval, repeats: true) { [weak self] _ in
             guard let self else { return }
+            guard !self.isRebuilding else { return }
             if UserDefaults.standard.bool(forKey: Self.disableMetersDefaultsKey) {
                 return
             }
@@ -360,8 +352,8 @@ final class MixerViewModel {
 
     // MARK: - Persistence
 
-    private func saveConfiguration() {
-        let config = MixerConfiguration(
+    var currentSnapshot: MixerSnapshot {
+        MixerSnapshot(configuration: MixerConfiguration(
             inputs: inputStrips.map { strip in
                 MixerConfiguration.InputStripConfig(
                     deviceUID: strip.selectedDevice.uid,
@@ -378,36 +370,231 @@ final class MixerViewModel {
                 gainDB: mainOutput.gainDB
             ),
             lowLatencyModeEnabled: lowLatencyModeEnabled
-        )
-        config.save()
+        ))
     }
 
-    private func loadConfiguration() {
-        let config = MixerConfiguration.load()
+    private var resolvedSnapshot: ResolvedMixerSnapshot {
+        currentSnapshot.resolve(inputDevices: deviceManager.inputDevices, outputDevices: deviceManager.outputDevices)
+    }
 
-        for (i, stripConfig) in config.inputs.enumerated() where i < inputStrips.count {
-            let strip = inputStrips[i]
-            if let device = deviceManager.device(forUID: stripConfig.deviceUID) {
-                strip.selectedDevice = device
+    private func saveConfiguration() {
+        guard !profilesUnavailable else { return }
+        do {
+            var library = profileLibrary
+            try library.updateDraft(currentSnapshot)
+            for device in inputStrips.map(\.selectedDevice) + [mainOutput.selectedDevice]
+                where device.id != AudioDevice.none.id {
+                library.deviceNames[device.uid] = device.name
             }
+            try profileStore.save(library)
+            profileLibrary = library
+            profileError = nil
+        } catch {
+            // Keep the current draft in memory so a later retry can persist it.
+            do { try profileLibrary.updateDraft(currentSnapshot) }
+            catch { logger.error("Invalid working mix: \(error, privacy: .public)") }
+            reportProfileError(error)
+        }
+    }
+
+    /// On a failed retry, keeps the current temporary mix rather than
+    /// reapplying the fallback draft, so controls stay in sync with the engine.
+    private func loadConfiguration(isRetry: Bool = false) {
+        do {
+            profileLibrary = try profileStore.load()
+            profilesUnavailable = false
+            profileError = nil
+        } catch {
+            profilesUnavailable = true
+            reportProfileError(error)
+            if isRetry { return }
+        }
+        lowLatencyModeEnabled = profileStore.lowLatencyModeEnabled
+        applySnapshot(profileLibrary.currentDraft)
+    }
+
+    private func applySnapshot(_ config: MixerSnapshot) {
+        profileRecallRevision += 1
+        hasPendingGainEdit = false
+        for (i, stripConfig) in config.inputs.enumerated() {
+            let strip = inputStrips[i]
             strip.leftChannelIndex = stripConfig.leftChannelIndex
             strip.rightChannelIndex = stripConfig.rightChannelIndex
             strip.gainDB = stripConfig.gainDB
             strip.pan = stripConfig.pan
             strip.muted = stripConfig.muted
             strip.routeToMain = stripConfig.routeToMain
-        }
-
-        if let device = deviceManager.device(forUID: config.mainOutput.deviceUID) {
-            mainOutput.selectedDevice = device
+            strip.soloed = false
         }
         mainOutput.gainDB = config.mainOutput.gainDB
-        lowLatencyModeEnabled = config.lowLatencyModeEnabled
+        resolveSelectedDevices(snapshot: config)
+        resetMeters()
+    }
+
+    private func resolveSelectedDevices(snapshot: MixerSnapshot) {
+        func device(uid: String, available: [AudioDevice]) -> AudioDevice {
+            if uid.isEmpty { return .none }
+            return available.first { $0.uid == uid }
+                ?? .unavailable(uid: uid, name: profileLibrary.deviceNames[uid] ?? uid)
+        }
+        for (index, config) in snapshot.inputs.enumerated() {
+            inputStrips[index].selectedDevice = device(uid: config.deviceUID, available: deviceManager.inputDevices)
+        }
+        mainOutput.selectedDevice = device(uid: snapshot.mainOutput.deviceUID, available: deviceManager.outputDevices)
+    }
+
+    private func resetMeters() {
+        for meter in inputStrips.map(\.meter) + [mainOutput.meter] {
+            meter.levelLeft = 0
+            meter.levelRight = 0
+            meter.peakLeft = 0
+            meter.peakRight = 0
+            meter.clipped = false
+            meter.timestamp = .now
+            meter.resetRevision += 1
+        }
+        inputMeterAnimationUntil.removeAll()
+        outputMeterAnimationUntil = .distantPast
+    }
+
+    /// Pushes every current control to the engine as one batch, so a live
+    /// profile recall is heard all at once rather than control by control.
+    private func applyLiveParameters(resetPeaks: Bool = false) {
+        mixerEngine.applyParameterBatch(resetPeaks: resetPeaks) {
+            for strip in inputStrips {
+                mixerEngine.setVolume(strip.gain, forInput: strip.id)
+                mixerEngine.setPan(strip.pan, forInput: strip.id)
+                mixerEngine.setMute(strip.muted, forInput: strip.id)
+                mixerEngine.setRouteToMain(strip.routeToMain, forInput: strip.id)
+                mixerEngine.setSolo(strip.soloed, forInput: strip.id)
+            }
+            mixerEngine.setOutputVolume(mainOutput.gain)
+            mixerEngine.setOutputMuted(mainOutput.muted)
+        }
+    }
+
+    // MARK: - Profiles
+
+    var hasActiveProfile: Bool { !profilesUnavailable && profileLibrary.active != nil }
+    var isProfileEdited: Bool { hasActiveProfile && (profileLibrary.isEdited || hasPendingGainEdit) }
+    var canSaveProfile: Bool { !profilesUnavailable && (profileLibrary.active == nil || isProfileEdited) }
+    var canRevertProfile: Bool { isProfileEdited }
+    var windowTitle: String {
+        guard !profilesUnavailable, let profile = profileLibrary.active else { return "Faderline" }
+        return "Faderline — \(profile.name)" + (isProfileEdited ? " — Edited" : "")
+    }
+
+    func setPendingGainEdit(_ pending: Bool, revision: Int) {
+        guard revision == profileRecallRevision else { return }
+        hasPendingGainEdit = pending
+    }
+
+    var availabilityWarning: String? {
+        let resolved = resolvedSnapshot
+        var problems: [String] = []
+        for (index, config) in currentSnapshot.inputs.enumerated()
+            where !config.deviceUID.isEmpty && resolved.inputs[index].id == AudioDevice.none.id {
+            let strip = inputStrips[index]
+            problems.append(strip.hasDevice ? "\(strip.label): saved channels unavailable" : "\(strip.label): device unavailable")
+        }
+        if !mainOutput.selectedDevice.uid.isEmpty && resolved.output.id == AudioDevice.none.id {
+            problems.append("Main Output: device unavailable")
+        }
+        return problems.isEmpty ? nil : problems.joined(separator: ". ") + ". Selections are preserved."
+    }
+
+    func profileNameError(_ name: String, renaming: Bool) -> String? {
+        do {
+            _ = try profileLibrary.validatedName(name, excluding: renaming ? profileLibrary.activeID : nil)
+            return nil
+        } catch { return error.localizedDescription }
+    }
+
+    @discardableResult
+    private func changeProfiles(recalling: Bool = false,
+                                _ change: (inout MixerProfileLibrary) throws -> Void) -> Bool {
+        guard !profilesUnavailable else { return false }
+        NotificationCenter.default.post(name: Self.commitPendingEditsNotification, object: self)
+        do {
+            var library = profileLibrary
+            try library.updateDraft(currentSnapshot)
+            let previous = resolvedSnapshot
+            let previousChannels = currentSnapshot.inputs.map { [$0.leftChannelIndex, $0.rightChannelIndex] }
+            try change(&library)
+            try profileStore.save(library)
+            profileLibrary = library
+            profileError = nil
+            if recalling {
+                applySnapshot(library.currentDraft)
+                let channels = currentSnapshot.inputs.map { [$0.leftChannelIndex, $0.rightChannelIndex] }
+                if isRebuilding || previous != resolvedSnapshot || previousChannels != channels
+                    || (startsAudio && !mixerEngine.isRunning && resolvedSnapshot.output.id != AudioDevice.none.id) {
+                    rebuildEngine()
+                } else {
+                    applyLiveParameters(resetPeaks: true)
+                }
+            }
+            return true
+        } catch {
+            reportProfileError(error)
+            return false
+        }
+    }
+
+    /// Selects a profile, or Default when `id` is nil.
+    func selectProfile(_ id: UUID?) {
+        guard id != profileLibrary.activeID else { return }
+        changeProfiles(recalling: true) { try $0.select(id) }
+    }
+
+    func saveProfile() {
+        guard canSaveProfile else { return }
+        guard hasActiveProfile else {
+            profileDialog = .saveAs
+            return
+        }
+        changeProfiles { try $0.save() }
+    }
+
+    @discardableResult
+    func saveProfileAs(_ name: String) -> Bool {
+        changeProfiles { try $0.saveAs(name) }
+    }
+
+    @discardableResult
+    func renameProfile(_ name: String) -> Bool {
+        changeProfiles { try $0.rename(name) }
+    }
+
+    func revertProfile() {
+        guard canRevertProfile else { return }
+        changeProfiles(recalling: true) { try $0.revert() }
+    }
+
+    func deleteProfile(_ id: UUID) {
+        changeProfiles(recalling: id == profileLibrary.activeID) { try $0.delete(id) }
+    }
+
+    func retryProfileStorage() {
+        if profilesUnavailable {
+            loadConfiguration(isRetry: true)
+            if !profilesUnavailable { rebuildEngine() }
+        } else {
+            saveConfiguration()
+        }
+    }
+
+    private func reportProfileError(_ error: Error) {
+        logger.error("Profile storage: \(error, privacy: .public)")
+        profileError = "Profiles: \(error.localizedDescription) "
+            + (profilesUnavailable
+               ? "Stored data is untouched. Changes cannot be saved until loading succeeds."
+               : "The change could not be saved. Retry to save the working mix.")
     }
 }
 
 /// Monotonic rebuild counter shared with the engine lifecycle queue.
-private final class RebuildGeneration: Sendable {
+final class RebuildGeneration: Sendable {
     private let value = Atomic<Int>(0)
 
     @discardableResult

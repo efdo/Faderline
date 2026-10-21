@@ -20,6 +20,10 @@ struct ChannelMeterView: View {
         }
         .onChange(of: meter.peakLeft) { _, newValue in heldLeft.register(newValue, at: meter.timestamp) }
         .onChange(of: meter.peakRight) { _, newValue in heldRight.register(newValue, at: meter.timestamp) }
+        .onChange(of: meter.resetRevision) {
+            heldLeft = PeakHold()
+            heldRight = PeakHold()
+        }
     }
 
     private var clipIndicator: some View {

@@ -6,9 +6,27 @@ struct MixerWindow: View {
     @Environment(MixerViewModel.self) private var viewModel
 
     var body: some View {
+        @Bindable var viewModel = viewModel
         let minimumSize = MixerTheme.Metrics.consoleMinimumSize(inputCount: viewModel.inputStrips.count)
 
         VStack(spacing: 0) {
+            if let error = viewModel.profileError {
+                HStack {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                    Spacer()
+                    Button("Retry", action: viewModel.retryProfileStorage)
+                }
+                .font(.caption)
+                .padding(8)
+                .background(MixerTheme.warningBannerBg)
+            }
+            if let warning = viewModel.availabilityWarning {
+                Label(warning, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+            }
             // Error banner
             if let error = viewModel.mixerEngine.lastError {
                 HStack {
@@ -42,6 +60,11 @@ struct MixerWindow: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MixerTheme.consoleBg)
         .background(InitialWindowFocus())
+        .navigationTitle(viewModel.windowTitle)
+        .sheet(item: $viewModel.profileDialog) { dialog in
+            ProfileDialogView(dialog: dialog)
+                .environment(viewModel)
+        }
     }
 }
 

@@ -58,14 +58,14 @@ struct ConsoleStripView: View {
             ConsolePicker(selection: Binding(
                 get: { strip.selectedDevice },
                 set: { viewModel.selectInputDevice($0, forStrip: strip) }
-            ), options: [AudioDevice.none] + viewModel.deviceManager.inputDevices,
+            ), options: deviceOptions(selected: strip.selectedDevice, available: viewModel.deviceManager.inputDevices),
                           label: { $0.name }, accessibilityLabel: "\(strip.label) device")
             .frame(maxWidth: .infinity)
         case .main(let output):
             ConsolePicker(selection: Binding(
                 get: { output.selectedDevice },
                 set: { viewModel.selectOutputDevice($0) }
-            ), options: [AudioDevice.none] + viewModel.deviceManager.outputDevices,
+            ), options: deviceOptions(selected: output.selectedDevice, available: viewModel.deviceManager.outputDevices),
                           label: { $0.name }, accessibilityLabel: "\(output.label) device")
             .frame(maxWidth: .infinity)
         }
@@ -73,19 +73,32 @@ struct ConsoleStripView: View {
 
     // MARK: - Channels
 
+    private func deviceOptions(selected: AudioDevice, available: [AudioDevice]) -> [AudioDevice] {
+        [AudioDevice.none] + (selected.uid.isEmpty || available.contains(selected) ? [] : [selected]) + available
+    }
+
     @ViewBuilder
     private var channelsRow: some View {
         switch kind {
         case .input(let strip):
             if strip.hasDevice {
+                let current = strip.channelMode
+                let options = strip.availableChannelModes
+                let selectedLabel = current?.label ?? "Ch \(strip.leftChannelIndex + 1) / \(strip.rightChannelIndex + 1)"
                 ConsolePicker(selection: Binding(
-                    get: { strip.channelMode },
-                    set: { viewModel.setChannelMode($0, forStrip: strip) }
-                ), options: strip.availableChannelModes,
-                              label: { $0.label }, accessibilityLabel: "\(strip.label) channels")
+                    get: { selectedLabel },
+                    set: { label in
+                        if let mode = options.first(where: { $0.label == label }) {
+                            viewModel.setChannelMode(mode, forStrip: strip)
+                        }
+                    }
+                ), options: (options.map(\.label).contains(selectedLabel) ? [] : [selectedLabel]) + options.map(\.label),
+                              label: { $0 }, accessibilityLabel: "\(strip.label) channels")
                 .frame(maxWidth: .infinity)
             } else {
-                ConsolePicker(selection: .constant("—"), options: ["—"],
+                let label = strip.selectedDevice.uid.isEmpty ? "—"
+                    : strip.channelMode?.label ?? "Ch \(strip.leftChannelIndex + 1) / \(strip.rightChannelIndex + 1)"
+                ConsolePicker(selection: .constant(label), options: [label],
                               label: { $0 }, accessibilityLabel: "\(strip.label) channels")
                 .disabled(true)
                 .frame(maxWidth: .infinity)
@@ -149,11 +162,18 @@ struct ConsoleStripView: View {
 
     @ViewBuilder
     private var dbRow: some View {
+        let revision = viewModel.profileRecallRevision
         switch kind {
         case .input(let strip):
-            DBField(value: strip.gainDB) { viewModel.setGainDB($0, forStrip: strip) }
+            DBField(value: strip.gainDB, revision: revision) {
+                if revision == viewModel.profileRecallRevision { viewModel.setGainDB($0, forStrip: strip) }
+            }
+            .id(revision)
         case .main(let output):
-            DBField(value: output.gainDB) { viewModel.setOutputGainDB($0) }
+            DBField(value: output.gainDB, revision: revision) {
+                if revision == viewModel.profileRecallRevision { viewModel.setOutputGainDB($0) }
+            }
+            .id(revision)
         }
     }
 
@@ -316,7 +336,9 @@ private struct ConsolePicker<Value: Equatable>: NSViewRepresentable {
 /// on losing focus, and re-syncs from the model whenever it changes
 /// elsewhere (e.g. the fader is dragged) while the field isn't focused.
 private struct DBField: View {
+    @Environment(MixerViewModel.self) private var viewModel
     let value: Float
+    let revision: Int
     let onCommit: (Float) -> Void
 
     @State private var text: String = ""
@@ -334,7 +356,17 @@ private struct DBField: View {
             }
             .onSubmit { commit() }
             .onChange(of: isFocused) { _, focused in
-                if !focused { commit() }
+                if focused {
+                    updatePendingEdit()
+                } else {
+                    commit()
+                }
+            }
+            .onChange(of: text) { _, _ in
+                if isFocused { updatePendingEdit() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: MixerViewModel.commitPendingEditsNotification)) { _ in
+                if isFocused { commit() }
             }
     }
 
@@ -346,6 +378,11 @@ private struct DBField: View {
             // Unparseable input reverts to the last known-good value.
             text = FaderTaper.displayString(forDB: value)
         }
+        viewModel.setPendingGainEdit(false, revision: revision)
+    }
+
+    private func updatePendingEdit() {
+        viewModel.setPendingGainEdit(text != FaderTaper.displayString(forDB: value), revision: revision)
     }
 }
 

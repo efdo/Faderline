@@ -64,6 +64,8 @@ enum MixerTheme {
     static let engineRunning = Color(red: 0.22, green: 0.80, blue: 0.35)
     static let engineStopped = Color(NSColor.disabledControlTextColor)
     static let errorBannerBg = Color(red: 0.55, green: 0.08, blue: 0.08)
+    static let warningBannerBg = Color(NSColor.systemOrange).opacity(0.15)
+    static let errorText = Color(NSColor.systemRed)
 
     /// Layout metrics shared between the gutter and every strip so their rows
     /// stay pixel-aligned. Rows are fixed-height (not a `Grid`) specifically so
