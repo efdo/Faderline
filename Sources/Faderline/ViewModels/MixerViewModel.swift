@@ -397,7 +397,9 @@ final class MixerViewModel {
         }
     }
 
-    private func loadConfiguration() {
+    /// On a failed retry, keeps the current temporary mix rather than
+    /// reapplying the fallback draft, so controls stay in sync with the engine.
+    private func loadConfiguration(isRetry: Bool = false) {
         do {
             profileLibrary = try profileStore.load()
             profilesUnavailable = false
@@ -405,6 +407,7 @@ final class MixerViewModel {
         } catch {
             profilesUnavailable = true
             reportProfileError(error)
+            if isRetry { return }
         }
         lowLatencyModeEnabled = profileStore.lowLatencyModeEnabled
         applySnapshot(profileLibrary.currentDraft)
@@ -448,6 +451,7 @@ final class MixerViewModel {
             meter.peakRight = 0
             meter.clipped = false
             meter.timestamp = .now
+            meter.resetRevision += 1
         }
         inputMeterAnimationUntil.removeAll()
         outputMeterAnimationUntil = .distantPast
@@ -569,7 +573,7 @@ final class MixerViewModel {
 
     func retryProfileStorage() {
         if profilesUnavailable {
-            loadConfiguration()
+            loadConfiguration(isRetry: true)
             if !profilesUnavailable { rebuildEngine() }
         } else {
             saveConfiguration()

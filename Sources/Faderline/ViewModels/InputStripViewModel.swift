@@ -12,6 +12,8 @@ final class MeterViewModel {
     var clipped: Bool = false
     /// Shared meter redraw timestamp, advanced by `MixerViewModel`'s polling timer.
     var timestamp: Date = .now
+    /// Bumped when meter state is reset (e.g. profile recall) so views drop held peaks.
+    var resetRevision = 0
 }
 
 /// ViewModel for a single input strip.

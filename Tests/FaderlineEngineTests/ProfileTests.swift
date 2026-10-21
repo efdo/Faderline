@@ -127,6 +127,21 @@ final class MixerProfileTests: XCTestCase {
         XCTAssertEqual(selected.defaultMix, draft)
     }
 
+    func testVersionOneDuplicateIDsAreRejectedAndPreserved() throws {
+        let (data, _) = try versionOneJSON(defaultActive: true, defaultDraft: MixerSnapshot(configuration: .default))
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var profiles = try XCTUnwrap(json["profiles"] as? [[String: Any]])
+        profiles[1]["id"] = profiles[0]["id"]
+        json["profiles"] = profiles
+        let corrupt = try JSONSerialization.data(withJSONObject: json)
+        defaults.set(corrupt, forKey: MixerProfileStore.storageKey)
+        XCTAssertThrowsError(try store.load())
+        let vm = MixerViewModel(profileStore: store, startsAudio: false)
+        XCTAssertTrue(vm.profilesUnavailable)
+        vm.setOutputGainDB(-5)
+        XCTAssertEqual(defaults.data(forKey: MixerProfileStore.storageKey), corrupt)
+    }
+
     func testVersionOneWithoutDefaultProfileKeepsActiveProfile() throws {
         let (data, callsID) = try versionOneJSON(defaultActive: false, includeDefault: false,
                                                  defaultDraft: MixerSnapshot(configuration: .default))
@@ -388,7 +403,9 @@ final class MixerProfileTests: XCTestCase {
         vm.toggleSolo(forStrip: vm.inputStrips[0])
         vm.toggleOutputMute()
         vm.inputStrips[0].meter.clipped = true
+        let meterRevision = vm.inputStrips[0].meter.resetRevision
         vm.selectProfile(firstID)
+        XCTAssertGreaterThan(vm.inputStrips[0].meter.resetRevision, meterRevision)
         XCTAssertEqual(vm.currentSnapshot, MixerSnapshot(configuration: configuration()))
         XCTAssertFalse(vm.anySolo)
         XCTAssertTrue(vm.mainOutput.muted)
@@ -502,8 +519,11 @@ final class MixerProfileTests: XCTestCase {
         XCTAssertNotNil(vm.profileError)
         XCTAssertFalse(vm.saveProfileAs("Never written"))
         vm.setOutputGainDB(-10)
+        vm.setPan(0.4, forStrip: vm.inputStrips[0])
         vm.retryProfileStorage()
         XCTAssertEqual(defaults.data(forKey: MixerProfileStore.storageKey), corrupt)
+        XCTAssertEqual(vm.mainOutput.gainDB, -10)
+        XCTAssertEqual(vm.inputStrips[0].pan, 0.4)
         let recovered = MixerProfileLibrary(configuration: configuration())
         try store.save(recovered)
         vm.retryProfileStorage()

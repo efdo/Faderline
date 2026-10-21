@@ -100,7 +100,8 @@ struct MixerProfileLibrary: Codable, Equatable {
         deviceNames = try container.decodeIfPresent([String: String].self, forKey: .deviceNames) ?? [:]
         if version == 1 {
             // Version 1 always had an active profile; its migrated "Default" profile becomes the working mix.
-            guard let activeID, let active = profiles.first(where: { $0.id == activeID }) else {
+            guard Set(profiles.map(\.id)).count == profiles.count,
+                  let activeID, let active = profiles.first(where: { $0.id == activeID }) else {
                 throw ProfileError.invalidData("The profile library has invalid profile references.")
             }
             if let legacy = profiles.first(where: { $0.name == Self.defaultName }) {
