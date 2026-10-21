@@ -1,0 +1,11 @@
+// Debug-only app identity. Keeps local builds from sharing the installed
+// release's bundle ID, microphone (TCC) grant, and saved mixer preferences.
+// Release builds are unaffected and keep com.faderline.app.
+PRODUCT_BUNDLE_IDENTIFIER = com.faderline.app.debug
+
+// Optional signing settings. Config/DebugLocal.xcconfig is git-ignored and is
+// normally a symlink to the per-user ~/.config/faderline/DebugSigning.xcconfig,
+// created by scripts/link-debug-signing.sh (run automatically for new Copilot
+// app worktrees). A stable certificate lets macOS keep the microphone grant
+// across rebuilds; without it Debug builds are ad-hoc signed.
+#include? "DebugLocal.xcconfig"

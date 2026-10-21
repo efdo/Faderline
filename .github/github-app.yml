@@ -1,0 +1,5 @@
+scripts:
+  - name: Link Debug signing
+    command: bash scripts/link-debug-signing.sh
+    triggers:
+      - session.create
